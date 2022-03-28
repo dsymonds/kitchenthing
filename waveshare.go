@@ -14,17 +14,23 @@ import (
 )
 
 func newPaper() paper {
+	// I'm running in landscape, so 800 is the width.
+	// The spec identifies this as the height.
+	const width = 800
+	const height = 480
+
 	return paper{
-		// I'm running in landscape, so 800 is the width.
-		// The spec identifies this as the height.
-		width:  800,
-		height: 480,
+		width:  width,
+		height: height,
 
 		// Pinout using BCM numbering.
 		reset: rpio.Pin(17), // spec says 10?!
 		dc:    rpio.Pin(25),
 		cs:    rpio.Pin(8),
 		busy:  rpio.Pin(24),
+
+		bw:  newBitmap(width, height),
+		red: newBitmap(width, height),
 	}
 }
 
@@ -32,6 +38,8 @@ type paper struct {
 	width, height int
 
 	reset, dc, cs, busy rpio.Pin
+
+	bw, red bitmap
 }
 
 func (p paper) debugf(format string, args ...interface{}) {
@@ -114,12 +122,18 @@ func (p paper) Init() error {
 	// TODO: 0x50 VCOM and Data interval Setting (CDI)
 	// TODO: 0x65 Gate/Source Start Setting (GSST)
 
+	// Initialise data to all white.
+	p.bw.setAll()
+	p.red.clearAll()
+
 	return nil
 }
 
 func (p paper) Stop() {
 	p.debugf("paper.Stop start")
 	defer p.debugf("paper.Stop finish")
+
+	// TODO: Turn display all white? I think that might be better for the hardware.
 
 	// Turn off display.
 	p.debugf("paper.Stop Power OFF (POF)")
@@ -141,6 +155,27 @@ func (p paper) Reset() {
 	time.Sleep(2 * time.Millisecond)
 	p.reset.Write(rpio.High)
 	time.Sleep(20 * time.Millisecond)
+}
+
+func (p paper) DisplayRefresh() {
+	p.debugf("paper.DisplayRefresh start")
+	start := time.Now()
+	defer func() {
+		p.debugf("paper.DisplayRefresh finish (took %v)", time.Since(start).Truncate(time.Millisecond))
+	}()
+
+	p.debugf("paper.DisplayRefresh Data Start Transmission 1 (DTM1)")
+	p.Command(0x10)
+	p.Data(p.bw.bits...)
+
+	p.debugf("paper.DisplayRefresh Data Start Transmission 2 (DTM2)")
+	p.Command(0x13)
+	p.Data(p.red.bits...)
+
+	p.debugf("paper.DisplayRefresh Display Refresh (DRF)")
+	p.Command(0x12)
+	time.Sleep(100 * time.Millisecond) // TODO: really needed?
+	p.WaitForNotBusy()
 }
 
 // WaitForNotBusy waits until the busy pin goes high, signaling the e-Paper is not busy.
@@ -171,4 +206,48 @@ func (p paper) Data(x ...byte) {
 	p.cs.Write(rpio.Low)
 	rpio.SpiTransmit(x...)
 	p.cs.Write(rpio.High)
+}
+
+type bitmap struct {
+	bits          []byte
+	width, height int
+}
+
+func newBitmap(width, height int) bitmap {
+	if width&0x07 != 0 {
+		panic(fmt.Sprintf("width %d is not a multiple of 8", width))
+	}
+	return bitmap{
+		bits:   make([]byte, width*height/8),
+		width:  width,
+		height: height,
+	}
+}
+
+func (b bitmap) clearAll() {
+	for i := range b.bits {
+		b.bits[i] = 0
+	}
+}
+
+func (b bitmap) setAll() {
+	for i := range b.bits {
+		b.bits[i] = 0xFF
+	}
+}
+
+func (b bitmap) clear(x, y int) {
+	off := x + y*b.width
+	i := off / 8 // byte index
+	// TODO: Is this right? Spec says pixel 1 is MSB of byte, etc.
+	j := 1 << (7 - off&0x07) // bit mask
+	b.bits[i] &^= byte(j)
+}
+
+func (b bitmap) set(x, y int) {
+	off := x + y*b.width
+	i := off / 8 // byte index
+	// TODO: Is this right? Spec says pixel 1 is MSB of byte, etc.
+	j := 1 << (7 - off&0x07) // bit mask
+	b.bits[i] |= byte(j)
 }
