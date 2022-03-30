@@ -7,6 +7,8 @@ package main
 
 import (
 	"fmt"
+	"image"
+	"image/color"
 	"log"
 	"time"
 
@@ -43,13 +45,12 @@ type paper struct {
 }
 
 func (p paper) debugf(format string, args ...interface{}) {
-	log.Printf(format, args...)
+	if *debug {
+		log.Printf(format, args...)
+	}
 }
 
-func (p paper) Init() error {
-	p.debugf("paper.Init start")
-	defer p.debugf("paper.Init finish")
-
+func (p paper) Start() error {
 	if err := rpio.Open(); err != nil {
 		return fmt.Errorf("opening memory range for GPIO access: %v", err)
 	}
@@ -62,6 +63,25 @@ func (p paper) Init() error {
 	p.dc.Mode(rpio.Output)
 	p.cs.Mode(rpio.Output)
 	p.busy.Mode(rpio.Input)
+	return nil
+}
+
+func (p paper) Stop() {
+	p.debugf("paper.Stop start")
+	defer p.debugf("paper.Stop finish")
+
+	// TODO: Turn display all white? I think that might be better for the hardware.
+
+	p.Sleep()
+
+	p.debugf("paper.Stop pin unconfig")
+	rpio.SpiEnd(rpio.Spi0)
+	rpio.Close()
+}
+
+func (p paper) Init() error {
+	p.debugf("paper.Init start")
+	defer p.debugf("paper.Init finish")
 
 	p.debugf("paper.Init reset")
 	p.Reset()
@@ -122,30 +142,18 @@ func (p paper) Init() error {
 	// TODO: 0x50 VCOM and Data interval Setting (CDI)
 	// TODO: 0x65 Gate/Source Start Setting (GSST)
 
-	// Initialise data to all white.
-	p.bw.setAll()
-	p.red.clearAll()
+	p.Clear()
 
 	return nil
 }
 
-func (p paper) Stop() {
-	p.debugf("paper.Stop start")
-	defer p.debugf("paper.Stop finish")
-
-	// TODO: Turn display all white? I think that might be better for the hardware.
-
-	// Turn off display.
-	p.debugf("paper.Stop Power OFF (POF)")
+func (p paper) Sleep() {
+	p.debugf("paper.Sleep Power OFF (POF)")
 	p.Command(0x02)
-	p.debugf("paper.Stop idle wait")
+	p.debugf("paper.Sleep idle wait")
 	p.WaitForNotBusy()
-	p.debugf("paper.Stop Deep Sleep (DSLP)")
+	p.debugf("paper.Sleep Deep Sleep (DSLP)")
 	p.Command(0x07, 0xA5)
-
-	p.debugf("paper.Stop pin unconfig")
-	rpio.SpiEnd(rpio.Spi0)
-	rpio.Close()
 }
 
 func (p paper) Reset() {
@@ -155,6 +163,12 @@ func (p paper) Reset() {
 	time.Sleep(2 * time.Millisecond)
 	p.reset.Write(rpio.High)
 	time.Sleep(20 * time.Millisecond)
+}
+
+func (p paper) Clear() {
+	// Initialise data to all white.
+	p.bw.setAll()
+	p.red.clearAll()
 }
 
 func (p paper) DisplayRefresh() {
@@ -176,6 +190,66 @@ func (p paper) DisplayRefresh() {
 	p.Command(0x12)
 	time.Sleep(100 * time.Millisecond) // TODO: really needed?
 	p.WaitForNotBusy()
+}
+
+func (p paper) DisplayPartialRefresh(x, y, w, h int) {
+	// TODO: This doesn't work. My hardware doesn't actually support partial refreshing.
+	// The subset of data is transferred just fine, but the entire display is refreshed
+	// as slowly as usual, instead of just the window.
+
+	// TODO: instead of panicking, snap x down and w up.
+	if x&7 != 0 {
+		panic(fmt.Sprintf("x=%d isn't a multiple of 8", x))
+	}
+	if w&7 != 0 {
+		panic(fmt.Sprintf("w=%d isn't a multiple of 8", w))
+	}
+
+	p.debugf("paper.DisplayPartialRefresh start")
+	start := time.Now()
+	defer func() {
+		p.debugf("paper.DisplayPartialRefresh finish (took %v)", time.Since(start).Truncate(time.Millisecond))
+	}()
+
+	p.debugf("paper.DisplayPartialRefresh Partial In (PTIN)")
+	p.Command(0x91)
+
+	p.debugf("paper.DisplayPartialRefresh Partial Window (PTL)")
+	p.Command(0x90)
+	hrst := x / 8           // Horizontal start channel bank
+	hred := (x + w - 1) / 8 // Horizontal end channel bank
+	vrst := y               // Vertical start line
+	vred := y + h - 1       // Vertical end line.
+	p.Data(byte(hrst >> 5))
+	p.Data(byte((hrst & 0x1F) << 3))
+	p.Data(byte(hred >> 5))
+	p.Data(byte((hred & 0x1F) << 3))
+	p.Data(byte(vrst >> 8))
+	p.Data(byte(vrst & 0xFF))
+	p.Data(byte(vred >> 8))
+	p.Data(byte(vred & 0xFF))
+	p.Data(0x01)                     // PT_SCAN=1
+	time.Sleep(2 * time.Millisecond) // TODO: might not be needed
+
+	p.debugf("paper.DisplayPartialRefresh Data Start Transmission 1 (DTM1)")
+	p.Command(0x10)
+	for row := y; row < y+h; row++ {
+		p.Data(p.bw.subrow(x, row, w)...)
+	}
+
+	p.debugf("paper.DisplayPartialRefresh Data Start Transmission 2 (DTM2)")
+	p.Command(0x13)
+	for row := y; row < y+h; row++ {
+		p.Data(p.red.subrow(x, row, w)...)
+	}
+
+	p.debugf("paper.DisplayPartialRefresh Display Refresh (DRF)")
+	p.Command(0x12)
+	time.Sleep(100 * time.Millisecond) // TODO: really needed?
+	p.WaitForNotBusy()
+
+	p.debugf("paper.DisplayPartialRefresh Partial Out (PTOUT)")
+	p.Command(0x92)
 }
 
 // WaitForNotBusy waits until the busy pin goes high, signaling the e-Paper is not busy.
@@ -208,6 +282,86 @@ func (p paper) Data(x ...byte) {
 	p.cs.Write(rpio.High)
 }
 
+type paperColor int
+
+const (
+	colWhite paperColor = iota
+	colBlack
+	colRed
+)
+
+func (pc paperColor) RGBA() color.RGBA {
+	switch pc {
+	case colBlack:
+		return color.RGBA{A: 0xFF}
+	case colRed:
+		return color.RGBA{R: 0xFF, G: 0, B: 0, A: 0xFF}
+	default:
+		return color.RGBA{R: 0xFF, G: 0xFF, B: 0xFF, A: 0xFF}
+	}
+}
+
+func pickColor(c color.Color) paperColor {
+	// TODO: something nicer, like picking the closest one.
+	r, g, b, _ := c.RGBA()
+	if r == 0xffff && g == 0xffff && b == 0xffff {
+		return colWhite
+	} else if r == 0 && g == 0 && b == 0 {
+		return colBlack
+	} else if r == 0xffff && g == 0 && b == 0 {
+		return colRed
+	}
+	return colWhite // white background default
+}
+
+// ColorModel implements image.Image.
+func (p paper) ColorModel() color.Model {
+	return color.ModelFunc(func(c color.Color) color.Color {
+		switch pickColor(c) {
+		case colBlack:
+			return color.Black
+		case colRed:
+			return color.RGBA{R: 0xFF, G: 0, B: 0, A: 0xFF}
+		default:
+			return color.White
+		}
+	})
+}
+
+// Bounds implements image.Image.
+func (p paper) Bounds() image.Rectangle {
+	return image.Rectangle{
+		Max: image.Point{X: p.width, Y: p.height},
+	}
+}
+
+// At implements image.Image.
+func (p paper) At(x, y int) color.Color {
+	if p.red.get(x, y) {
+		return colRed.RGBA()
+	}
+	if !p.bw.get(x, y) {
+		return colBlack.RGBA()
+	}
+	return colWhite.RGBA()
+}
+
+// Set implements draw.Image.
+func (p paper) Set(x, y int, c color.Color) {
+	switch pickColor(c) {
+	case colBlack:
+		p.bw.clear(x, y)
+		p.red.clear(x, y)
+	case colRed:
+		p.bw.set(x, y)
+		p.red.set(x, y)
+	default:
+		// white
+		p.bw.set(x, y)
+		p.red.clear(x, y)
+	}
+}
+
 type bitmap struct {
 	bits          []byte
 	width, height int
@@ -238,16 +392,28 @@ func (b bitmap) setAll() {
 
 func (b bitmap) clear(x, y int) {
 	off := x + y*b.width
-	i := off / 8 // byte index
-	// TODO: Is this right? Spec says pixel 1 is MSB of byte, etc.
+	i := off / 8             // byte index
 	j := 1 << (7 - off&0x07) // bit mask
 	b.bits[i] &^= byte(j)
 }
 
+func (b bitmap) get(x, y int) bool {
+	off := x + y*b.width
+	i := off / 8             // byte index
+	j := 1 << (7 - off&0x07) // bit mask
+	return b.bits[i]|byte(j) != 0
+}
+
 func (b bitmap) set(x, y int) {
 	off := x + y*b.width
-	i := off / 8 // byte index
-	// TODO: Is this right? Spec says pixel 1 is MSB of byte, etc.
+	i := off / 8             // byte index
 	j := 1 << (7 - off&0x07) // bit mask
 	b.bits[i] |= byte(j)
+}
+
+// subrow returns the subset of the bitmap starting at (x, y), going for w bits.
+func (b bitmap) subrow(x, y, w int) []byte {
+	off := x + y*b.width
+	i := off / 8 // byte index
+	return b.bits[i : i+w/8]
 }

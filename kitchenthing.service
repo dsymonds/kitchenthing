@@ -5,6 +5,7 @@ After=multi-user.target
 [Service]
 Type=simple
 
+WorkingDirectory=/home/dsymonds/src/kitchenthing
 ExecStart=/home/dsymonds/src/kitchenthing/kitchenthing
 
 Restart=always
