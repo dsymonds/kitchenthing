@@ -9,6 +9,14 @@ My specific hardware:
    * Raspberry Pi Zero W
    * Waveshare 7.5inch e-Paper HAT (B)
 
+To run this, grab a TTF you like (e.g. NotoSans-Bold.ttf works well for me),
+and create a `config.yaml` file like this:
+
+```
+font: "NotoSans-Bold.ttf"
+todoist_api_token: "..."
+```
+
 ## systemd Automation
 
 To have this run all the time from boot, customise `kitchenthing.service` and then
