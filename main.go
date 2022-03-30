@@ -30,8 +30,9 @@ var (
 )
 
 type Config struct {
-	Font            string `yaml:"font"`
-	TodoistAPIToken string `yaml:"todoist_api_token"`
+	Font            string        `yaml:"font"`
+	RefreshPeriod   time.Duration `yaml:"refresh_period"`
+	TodoistAPIToken string        `yaml:"todoist_api_token"`
 }
 
 func main() {
@@ -55,7 +56,7 @@ func main() {
 		ctx, _ := context.WithTimeout(context.Background(), 30*time.Second)
 		img := image.NewNRGBA(image.Rect(0, 0, 800, 480))
 		draw.Draw(img, img.Bounds(), &image.Uniform{color.White}, image.ZP, draw.Src)
-		rend.refresh(ctx, img)
+		rend.RenderInfo(img, BuildInfo(ctx, cfg))
 		var buf bytes.Buffer
 		if err := (&png.Encoder{CompressionLevel: png.BestCompression}).Encode(&buf, img); err != nil {
 			log.Fatalf("Encoding PNG: %v", err)
@@ -95,7 +96,7 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := loop(ctx, rend, p); err != nil {
+		if err := loop(ctx, cfg, rend, p); err != nil {
 			log.Printf("Loop failed: %v", err)
 		}
 		cancel()
@@ -108,23 +109,24 @@ func main() {
 	log.Printf("kitchenthing done")
 }
 
-func loop(ctx context.Context, rend renderer, p paper) error {
+func loop(ctx context.Context, cfg Config, rend renderer, p paper) error {
 	for {
+		info := BuildInfo(ctx, cfg)
+
 		p.Init()
-		rend.refresh(ctx, p)
+		rend.RenderInfo(p, info)
 		p.DisplayRefresh()
 		p.Sleep()
 
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(10 * time.Minute):
+		case <-time.After(time.Until(info.nextRefresh)):
 		}
 	}
 }
 
 type renderer struct {
-	cfg  Config
 	font *truetype.Font
 }
 
@@ -138,25 +140,47 @@ func newRenderer(cfg Config) (renderer, error) {
 		return renderer{}, fmt.Errorf("parsing font data: %w", err)
 	}
 	return renderer{
-		cfg:  cfg,
 		font: font,
 	}, nil
 }
 
-func (r renderer) refresh(ctx context.Context, dst draw.Image) {
-	// TODO: the text layout here is a bit rubbish.
+// Info represents the information to be rendered.
+type Info struct {
+	today       time.Time
+	nextRefresh time.Time
 
-	// Date in top-right corner.
-	writeText(dst, freetype.Pt(420, 50), color.Black, 36, r.font, time.Now().Format("Mon _2 Jan"))
+	tasks []renderableTask
 
-	tasks, err := TodoistTasks(ctx, r.cfg)
+	// TODO: report errors?
+}
+
+func BuildInfo(ctx context.Context, cfg Config) Info {
+	info := Info{
+		today:       time.Now(),
+		nextRefresh: time.Now().Add(cfg.RefreshPeriod),
+	}
+
+	tasks, err := TodoistTasks(ctx, cfg)
 	if err != nil {
 		// TODO: add error to screen? or some sort of simple message?
 		log.Printf("Fetching Todoist tasks: %v", err)
-		return
+	} else {
+		info.tasks = tasks
 	}
-	line1 := "No tasks for today!"
-	switch n := len(tasks); {
+
+	return info
+}
+
+func (r renderer) RenderInfo(dst draw.Image, info Info) {
+	// TODO: the text layout here is a bit rubbish.
+
+	// Date in top-right corner.
+	writeText(dst, freetype.Pt(420, 50), color.Black, 36, r.font, info.today.Format("Mon _2 Jan"))
+
+	var line1 string
+	switch n := len(info.tasks); {
+	case n == 0:
+		line1 = "No tasks for today!"
 	case n == 1:
 		line1 = "Just one more thing to do:"
 	case n == 2:
@@ -167,7 +191,7 @@ func (r renderer) refresh(ctx context.Context, dst draw.Image) {
 		line1 = "Quite a bit to get done, eh?"
 	}
 	writeText(dst, freetype.Pt(2, 100), color.Black, 20, r.font, line1)
-	for i, task := range tasks {
+	for i, task := range info.tasks {
 		txt := "◊ " + task.Title
 		if task.Assignee != "" {
 			txt += " (" + task.Assignee + ")"
@@ -179,6 +203,8 @@ func (r renderer) refresh(ctx context.Context, dst draw.Image) {
 		p = p.Add(freetype.Pt(10, 0)) // nudge over
 		p = writeText(dst, p, colRed.RGBA(), 12, r.font, task.Project)
 	}
+
+	writeText(dst, freetype.Pt(640, 470), color.Black, 8, r.font, "Next update: ~"+info.nextRefresh.Format("15:04:05"))
 }
 
 func writeText(dst draw.Image, p fixed.Point26_6, col color.Color, fontSize float64, font *truetype.Font, text string) fixed.Point26_6 {

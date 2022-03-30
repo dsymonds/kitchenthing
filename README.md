@@ -14,6 +14,7 @@ and create a `config.yaml` file like this:
 
 ```
 font: "NotoSans-Bold.ttf"
+refresh_period: 10m
 todoist_api_token: "..."
 ```
 
