@@ -15,6 +15,7 @@ type renderableTask struct {
 	Priority int // 4, 3, 2, 1
 	Title    string
 	Assignee string // may be empty
+	Project  string
 }
 
 type todoistProject struct {
@@ -38,22 +39,22 @@ type todoistTask struct {
 }
 
 func TodoistTasks(ctx context.Context, cfg Config) ([]renderableTask, error) {
-	sharedProjects := make(map[int64]bool)
+	projects := make(map[int64]todoistProject)
 	collaborators := make(map[int64]todoistCollaborator)
 
 	// TODO: fetching projects/collaborators probably only need to happen hourly/daily
 
-	var projects []todoistProject
-	if err := todoistGET(ctx, cfg, "/rest/v1/projects", &projects); err != nil {
+	var projs []todoistProject
+	if err := todoistGET(ctx, cfg, "/rest/v1/projects", &projs); err != nil {
 		return nil, fmt.Errorf("getting projects: %v", err)
 	}
-	for _, proj := range projects {
+	for _, proj := range projs {
+		projects[proj.ID] = proj
+
+		// TODO: do these in parallel
 		if !proj.Shared {
 			continue
 		}
-		sharedProjects[proj.ID] = true
-
-		// TODO: do these in parallel
 		var collabs []todoistCollaborator
 		if err := todoistGET(ctx, cfg, fmt.Sprintf("/rest/v1/projects/%d/collaborators", proj.ID), &collabs); err != nil {
 			return nil, fmt.Errorf("getting collaborators for project %q: %v", proj.Name, err)
@@ -70,12 +71,14 @@ func TodoistTasks(ctx context.Context, cfg Config) ([]renderableTask, error) {
 		return nil, fmt.Errorf("getting tasks: %v", err)
 	}
 	for _, task := range tasks {
-		if !sharedProjects[task.ProjectID] {
+		proj := projects[task.ProjectID]
+		if !proj.Shared {
 			continue
 		}
 		rt := renderableTask{
 			Priority: task.Priority,
 			Title:    task.Content,
+			Project:  proj.Name,
 		}
 		if task.Assignee != nil {
 			name := collaborators[*task.Assignee].Name

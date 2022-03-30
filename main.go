@@ -18,6 +18,7 @@ import (
 
 	"github.com/golang/freetype"
 	"github.com/golang/freetype/truetype"
+	"golang.org/x/image/math/fixed"
 	"gopkg.in/yaml.v2"
 )
 
@@ -146,7 +147,7 @@ func (r renderer) refresh(ctx context.Context, dst draw.Image) {
 	// TODO: the text layout here is a bit rubbish.
 
 	// Date in top-right corner.
-	writeText(dst, 420, 50, color.Black, 36, r.font, time.Now().Format("Mon _2 Jan"))
+	writeText(dst, freetype.Pt(420, 50), color.Black, 36, r.font, time.Now().Format("Mon _2 Jan"))
 
 	tasks, err := TodoistTasks(ctx, r.cfg)
 	if err != nil {
@@ -165,7 +166,7 @@ func (r renderer) refresh(ctx context.Context, dst draw.Image) {
 	default:
 		line1 = "Quite a bit to get done, eh?"
 	}
-	writeText(dst, 2, 100, color.Black, 20, r.font, line1)
+	writeText(dst, freetype.Pt(2, 100), color.Black, 20, r.font, line1)
 	for i, task := range tasks {
 		txt := "◊ " + task.Title
 		if task.Assignee != "" {
@@ -173,11 +174,14 @@ func (r renderer) refresh(ctx context.Context, dst draw.Image) {
 		}
 		// TODO: red for overdue?
 		// TODO: adjust size for task count?
-		writeText(dst, 10, 110+28*(i+1), color.Black, 16, r.font, txt)
+		p := freetype.Pt(10, 110+28*(i+1)) // TODO: carry this instead
+		p = writeText(dst, p, color.Black, 16, r.font, txt)
+		p = p.Add(freetype.Pt(10, 0)) // nudge over
+		p = writeText(dst, p, colRed.RGBA(), 12, r.font, task.Project)
 	}
 }
 
-func writeText(dst draw.Image, x, y int, col color.Color, fontSize float64, font *truetype.Font, text string) {
+func writeText(dst draw.Image, p fixed.Point26_6, col color.Color, fontSize float64, font *truetype.Font, text string) fixed.Point26_6 {
 	ctx := freetype.NewContext()
 	ctx.SetDst(dst)
 	ctx.SetDPI(125)
@@ -185,8 +189,10 @@ func writeText(dst draw.Image, x, y int, col color.Color, fontSize float64, font
 	ctx.SetFont(font)
 	ctx.SetFontSize(fontSize)
 	ctx.SetSrc(&image.Uniform{col})
-	_, err := ctx.DrawString(text, freetype.Pt(x, y))
+	np, err := ctx.DrawString(text, p)
 	if err != nil {
 		log.Printf("Writing text: %v", err)
+		return p
 	}
+	return np
 }
