@@ -16,8 +16,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang/freetype"
-	"github.com/golang/freetype/truetype"
+	"golang.org/x/image/font"
+	"golang.org/x/image/font/opentype"
 	"golang.org/x/image/math/fixed"
 	"gopkg.in/yaml.v2"
 )
@@ -26,7 +26,8 @@ var (
 	configFile = flag.String("config_file", "config.yaml", "configuration `filename`")
 	debug      = flag.Bool("debug", false, "whether to log extra information")
 
-	testRender = flag.String("test_render", "", "`filename` to render a PNG to")
+	testRender  = flag.String("test_render", "", "`filename` to render a PNG to")
+	testTodoist = flag.Bool("test_todoist", false, "whether to use fake Todoist data")
 )
 
 type Config struct {
@@ -127,20 +128,65 @@ func loop(ctx context.Context, cfg Config, rend renderer, p paper) error {
 }
 
 type renderer struct {
-	font *truetype.Font
+	font *opentype.Font
+
+	tiny, small, normal, large, xlarge font.Face
 }
 
 func newRenderer(cfg Config) (renderer, error) {
+	const dpi = 125 // per paper hardware
+
 	fdata, err := ioutil.ReadFile(cfg.Font)
 	if err != nil {
 		return renderer{}, fmt.Errorf("loading font file: %w", err)
 	}
-	font, err := freetype.ParseFont(fdata)
+	font, err := opentype.Parse(fdata)
 	if err != nil {
 		return renderer{}, fmt.Errorf("parsing font data: %w", err)
 	}
+	tiny, err := opentype.NewFace(font, &opentype.FaceOptions{ // TODO: need hinting?
+		Size: 10, // points
+		DPI:  dpi,
+	})
+	if err != nil {
+		return renderer{}, fmt.Errorf("making tiny font face: %w", err)
+	}
+	small, err := opentype.NewFace(font, &opentype.FaceOptions{ // TODO: need hinting?
+		Size: 12, // points
+		DPI:  dpi,
+	})
+	if err != nil {
+		return renderer{}, fmt.Errorf("making tiny font face: %w", err)
+	}
+	normal, err := opentype.NewFace(font, &opentype.FaceOptions{ // TODO: need hinting?
+		Size: 16, // points
+		DPI:  dpi,
+	})
+	if err != nil {
+		return renderer{}, fmt.Errorf("making tiny font face: %w", err)
+	}
+	large, err := opentype.NewFace(font, &opentype.FaceOptions{ // TODO: need hinting?
+		Size: 20, // points
+		DPI:  dpi,
+	})
+	if err != nil {
+		return renderer{}, fmt.Errorf("making tiny font face: %w", err)
+	}
+	xlarge, err := opentype.NewFace(font, &opentype.FaceOptions{ // TODO: need hinting?
+		Size: 36, // points
+		DPI:  dpi,
+	})
+	if err != nil {
+		return renderer{}, fmt.Errorf("making tiny font face: %w", err)
+	}
 	return renderer{
 		font: font,
+
+		tiny:   tiny,
+		small:  small,
+		normal: normal,
+		large:  large,
+		xlarge: xlarge,
 	}, nil
 }
 
@@ -159,6 +205,15 @@ func BuildInfo(ctx context.Context, cfg Config) Info {
 		today:       time.Now(),
 		nextRefresh: time.Now().Add(cfg.RefreshPeriod),
 	}
+	if *testTodoist {
+		info.tasks = []renderableTask{
+			{4, "something really important", "David", "House"},
+			{3, "something important", "", "House"},
+			{2, "something nice to do", "", "Other"},
+			{1, "if there's time", "", "Other"},
+		}
+		return info
+	}
 
 	tasks, err := TodoistTasks(ctx, cfg)
 	if err != nil {
@@ -172,53 +227,95 @@ func BuildInfo(ctx context.Context, cfg Config) Info {
 }
 
 func (r renderer) RenderInfo(dst draw.Image, info Info) {
-	// TODO: the text layout here is a bit rubbish.
-
 	// Date in top-right corner.
-	writeText(dst, freetype.Pt(420, 50), color.Black, 36, r.font, info.today.Format("Mon _2 Jan"))
+	next := r.writeText(dst, image.Pt(-2, 2), topLeft, color.Black, r.xlarge, info.today.Format("Mon _2 Jan"))
 
 	var line1 string
 	switch n := len(info.tasks); {
 	case n == 0:
-		line1 = "No tasks for today!"
+		line1 = "No tasks remaining for today!"
 	case n == 1:
 		line1 = "Just one more thing to do:"
 	case n == 2:
 		line1 = "A couple of tasks to tick off:"
-	case n <= 5:
+	case n < 5:
 		line1 = "A few things that need doing:"
 	default:
 		line1 = "Quite a bit to get done, eh?"
 	}
-	writeText(dst, freetype.Pt(2, 100), color.Black, 20, r.font, line1)
-	for i, task := range info.tasks {
-		txt := "◊ " + task.Title
+	next.X = 2
+	next = r.writeText(dst, next, topLeft, color.Black, r.large, line1)
+
+	listVPitch := r.normal.Metrics().Height.Ceil()
+	listBase := image.Pt(10, next.Y+2+listVPitch) // baseline of each list entry
+	for i, task := range info.tasks {             // TODO: adjust font size for task count?
+		txt := fmt.Sprintf("[P%d] %s", 4-task.Priority, task.Title)
 		if task.Assignee != "" {
 			txt += " (" + task.Assignee + ")"
 		}
 		// TODO: red for overdue?
-		// TODO: adjust size for task count?
-		p := freetype.Pt(10, 110+28*(i+1)) // TODO: carry this instead
-		p = writeText(dst, p, color.Black, 16, r.font, txt)
-		p = p.Add(freetype.Pt(10, 0)) // nudge over
-		p = writeText(dst, p, colRed.RGBA(), 12, r.font, task.Project)
+		baselineY := listBase.Y + i*listVPitch
+		origin := image.Pt(listBase.X, baselineY)
+		next := r.writeText(dst, origin, bottomLeft, color.Black, r.normal, txt)
+		origin = image.Pt(next.X+10, baselineY)
+		r.writeText(dst, origin, bottomLeft, colorRed, r.small, task.Project)
 	}
 
-	writeText(dst, freetype.Pt(640, 470), color.Black, 8, r.font, "Next update: ~"+info.nextRefresh.Format("15:04:05"))
+	r.writeText(dst, image.Pt(-2, -2), topLeft, color.Black, r.tiny, "Next update: ~"+info.nextRefresh.Format("15:04:05"))
 }
 
-func writeText(dst draw.Image, p fixed.Point26_6, col color.Color, fontSize float64, font *truetype.Font, text string) fixed.Point26_6 {
-	ctx := freetype.NewContext()
-	ctx.SetDst(dst)
-	ctx.SetDPI(125)
-	ctx.SetClip(dst.Bounds())
-	ctx.SetFont(font)
-	ctx.SetFontSize(fontSize)
-	ctx.SetSrc(&image.Uniform{col})
-	np, err := ctx.DrawString(text, p)
-	if err != nil {
-		log.Printf("Writing text: %v", err)
-		return p
+var colorRed = color.RGBA{R: 0xFF, G: 0, B: 0, A: 0xFF}
+
+type originAnchor int
+
+const (
+	topLeft originAnchor = iota
+	bottomLeft
+)
+
+// writeText renders some text at the origin.
+// If either component of origin is negative, it is interpreted as being relative to the right/bottom.
+// It returns the opposite corner.
+func (r renderer) writeText(dst draw.Image, origin image.Point, anchor originAnchor, col color.Color, face font.Face, text string) (opposite image.Point) {
+	// TODO: fix this to work in case dst's bounds is not (0, 0).
+
+	d := &font.Drawer{
+		Dst:  dst,
+		Src:  &image.Uniform{col},
+		Face: face,
 	}
-	return np
+
+	bounds, advance := d.BoundString(text)
+	boundsWidth, boundsHeight := (bounds.Max.X - bounds.Min.X), (bounds.Max.Y - bounds.Min.Y)
+
+	// If the advance is bigger than the bounds, use it.
+	if advance > boundsWidth {
+		boundsWidth = advance
+	}
+
+	dstSize := dst.Bounds().Size()
+	lowerRight := fixed.P(dstSize.X-1, dstSize.Y-1)
+
+	// d.Dot needs to end up at the bottom left.
+	if origin.X >= 0 {
+		// Relative to left side.
+		d.Dot.X = fixed.I(origin.X)
+	} else {
+		// Relative to right side.
+		d.Dot.X = lowerRight.X - boundsWidth - fixed.I(-origin.X)
+	}
+	if origin.Y >= 0 {
+		// Relative to top.
+		d.Dot.Y = fixed.I(origin.Y)
+		if anchor == topLeft {
+			d.Dot.Y += boundsHeight
+		}
+	} else {
+		// Relative to bottom.
+		d.Dot.Y = lowerRight.Y - fixed.I(-origin.Y)
+	}
+
+	d.DrawString(text)
+
+	return image.Pt(d.Dot.X.Round(), d.Dot.Y.Round())
 }
