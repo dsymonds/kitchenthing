@@ -18,6 +18,16 @@ type renderableTask struct {
 	Project  string
 }
 
+func (rt renderableTask) Less(o renderableTask) bool {
+	if rt.Priority != o.Priority {
+		return rt.Priority > o.Priority
+	}
+	if rt.Project != o.Project {
+		return rt.Project < o.Project
+	}
+	return rt.Title < o.Title
+}
+
 type todoistProject struct {
 	ID     int64  `json:"id"`
 	Name   string `json:"name"`
@@ -90,7 +100,7 @@ func TodoistTasks(ctx context.Context, cfg Config) ([]renderableTask, error) {
 		res = append(res, rt)
 	}
 
-	sort.Slice(res, func(i, j int) bool { return res[i].Priority > res[j].Priority })
+	sort.Slice(res, func(i, j int) bool { return res[i].Less(res[j]) })
 
 	return res, nil
 }
