@@ -18,6 +18,8 @@ refresh_period: 10m
 todoist_api_token: "..."
 ```
 
+Add a `photos` dir and put JPEGs and PNGs in it. Or not, and the rest will still work.
+
 ## systemd Automation
 
 To have this run all the time from boot, customise `kitchenthing.service` and then

@@ -302,30 +302,16 @@ func (pc paperColor) RGBA() color.RGBA {
 }
 
 func pickColor(c color.Color) paperColor {
-	// TODO: something nicer, like picking the closest one.
-	r, g, b, _ := c.RGBA()
-	if r == 0xffff && g == 0xffff && b == 0xffff {
-		return colWhite
-	} else if r == 0 && g == 0 && b == 0 {
-		return colBlack
-	} else if r == 0xffff && g == 0 && b == 0 {
-		return colRed
-	}
-	return colWhite // white background default
+	return paperColor(staticPalette.Index(c))
 }
+
+var colorRed = color.RGBA{R: 0xFF, G: 0, B: 0, A: 0xFF}
+
+var staticPalette = color.Palette{colWhite: color.White, colBlack: color.Black, colRed: colorRed}
 
 // ColorModel implements image.Image.
 func (p paper) ColorModel() color.Model {
-	return color.ModelFunc(func(c color.Color) color.Color {
-		switch pickColor(c) {
-		case colBlack:
-			return color.Black
-		case colRed:
-			return color.RGBA{R: 0xFF, G: 0, B: 0, A: 0xFF}
-		default:
-			return color.White
-		}
-	})
+	return staticPalette
 }
 
 // Bounds implements image.Image.

@@ -8,11 +8,14 @@ import (
 	"image"
 	"image/color"
 	"image/draw"
+	_ "image/jpeg"
 	"image/png"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -39,6 +42,8 @@ type Config struct {
 func main() {
 	flag.Parse()
 
+	rand.Seed(time.Now().UnixNano())
+
 	var cfg Config
 	cfgRaw, err := ioutil.ReadFile(*configFile)
 	if err != nil {
@@ -55,7 +60,7 @@ func main() {
 
 	if *testRender != "" {
 		ctx, _ := context.WithTimeout(context.Background(), 30*time.Second)
-		img := image.NewNRGBA(image.Rect(0, 0, 800, 480))
+		img := image.NewPaletted(image.Rect(0, 0, 800, 480), staticPalette)
 		draw.Draw(img, img.Bounds(), &image.Uniform{color.White}, image.ZP, draw.Src)
 		rend.RenderInfo(img, BuildInfo(ctx, cfg))
 		var buf bytes.Buffer
@@ -260,11 +265,22 @@ func (r renderer) RenderInfo(dst draw.Image, info Info) {
 		origin = image.Pt(next.X+10, baselineY)
 		r.writeText(dst, origin, bottomLeft, colorRed, r.small, task.Project)
 	}
+	bottomOfListY := listBase.Y + (len(info.tasks)-1)*listVPitch
 
-	r.writeText(dst, image.Pt(-2, -2), topLeft, color.Black, r.tiny, "Next update: ~"+info.nextRefresh.Format("15:04:05"))
+	next = r.writeText(dst, image.Pt(-2, -2), bottomLeft, color.Black, r.tiny, "Next update: ~"+info.nextRefresh.Format("15:04:05"))
+	topOfFooterY := next.Y
+
+	sub := clippedImage{
+		img: dst,
+		bounds: image.Rectangle{
+			Min: image.Pt(10, bottomOfListY+10),
+			Max: image.Pt(dst.Bounds().Max.X-10, topOfFooterY-10),
+		},
+	}
+	if err := drawRandomPhoto(sub); err != nil {
+		log.Printf("Drawing random photo: %v", err)
+	}
 }
-
-var colorRed = color.RGBA{R: 0xFF, G: 0, B: 0, A: 0xFF}
 
 type originAnchor int
 
@@ -317,5 +333,79 @@ func (r renderer) writeText(dst draw.Image, origin image.Point, anchor originAnc
 
 	d.DrawString(text)
 
+	if anchor == bottomLeft {
+		d.Dot.Y -= boundsHeight
+	}
+
 	return image.Pt(d.Dot.X.Round(), d.Dot.Y.Round())
 }
+
+func drawRandomPhoto(dst draw.Image) error {
+	opts, err := filepath.Glob("photos/*")
+	if err != nil {
+		return fmt.Errorf("globbing photos dir: %w", err)
+	}
+	if len(opts) == 0 {
+		return fmt.Errorf("no files in photos dir")
+	}
+	filename := opts[rand.Intn(len(opts))]
+	f, err := os.Open(filename)
+	if err != nil {
+		return fmt.Errorf("opening %s: %w", filename, err)
+	}
+	src, _, err := image.Decode(f)
+	f.Close()
+	if err != nil {
+		return fmt.Errorf("decoding image %s: %w", filename, err)
+	}
+
+	srcWidth := src.Bounds().Max.X - src.Bounds().Min.X
+	srcHeight := src.Bounds().Max.Y - src.Bounds().Min.Y
+	dstWidth := dst.Bounds().Max.X - dst.Bounds().Min.X
+	dstHeight := dst.Bounds().Max.Y - dst.Bounds().Min.Y
+	scaleWidth := float64(srcWidth) / float64(dstWidth)
+	scaleHeight := float64(srcHeight) / float64(dstHeight)
+	var scale float64
+	if scaleWidth >= scaleHeight {
+		// Width needs more shrinking.
+		// Shift vertically to centre.
+		scale = scaleWidth
+		// TODO
+	} else {
+		// Height needs more shrinking.
+		// Shift horizontally to centre.
+		scale = scaleHeight
+		newWidth := int(float64(srcWidth) / scaleHeight)
+		offset := (dstWidth - newWidth) / 2
+		dst = clippedImage{
+			img: dst,
+			bounds: image.Rectangle{
+				Min: image.Pt(dst.Bounds().Min.X+offset, dst.Bounds().Min.Y),
+				Max: image.Pt(dst.Bounds().Max.X-offset, dst.Bounds().Max.Y),
+			},
+		}
+	}
+
+	for y := dst.Bounds().Min.Y; y < dst.Bounds().Max.Y; y++ {
+		for x := dst.Bounds().Min.X; x < dst.Bounds().Max.X; x++ {
+			// TODO: downsample/dither/scale, etc.
+			srcX := src.Bounds().Min.X + int(scale*float64(x-dst.Bounds().Min.X))
+			srcY := src.Bounds().Min.Y + int(scale*float64(y-dst.Bounds().Min.Y))
+			srcCol := src.At(srcX, srcY)
+			dstCol := dst.ColorModel().Convert(srcCol)
+			dst.Set(x, y, dstCol)
+		}
+	}
+
+	return nil
+}
+
+type clippedImage struct {
+	img    draw.Image
+	bounds image.Rectangle
+}
+
+func (ci clippedImage) ColorModel() color.Model     { return ci.img.ColorModel() }
+func (ci clippedImage) Bounds() image.Rectangle     { return ci.bounds }
+func (ci clippedImage) At(x, y int) color.Color     { return ci.img.At(x, y) }
+func (ci clippedImage) Set(x, y int, c color.Color) { ci.img.Set(x, y, c) }
