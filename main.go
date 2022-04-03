@@ -389,14 +389,34 @@ func drawRandomPhoto(dst draw.Image) error {
 	// To make the remaining code simpler, shift dst so that its bounds always starts at (0, 0).
 	dst = shiftedImage{dst}
 
+	// TODO: This is quite inefficient.
+	carriedErrors := make([]colorError, dst.Bounds().Max.X*dst.Bounds().Max.Y)
+	carriedError := func(x, y int) *colorError {
+		return &carriedErrors[x+y*dst.Bounds().Max.X]
+	}
 	for y := 0; y < dst.Bounds().Max.Y; y++ {
 		for x := 0; x < dst.Bounds().Max.X; x++ {
-			// TODO: downsample/dither/scale, etc.
 			srcX := src.Bounds().Min.X + int(scale*float64(x))
 			srcY := src.Bounds().Min.Y + int(scale*float64(y))
 			srcCol := src.At(srcX, srcY)
+			srcCol = carriedError(x, y).Apply(srcCol)
 			dstCol := dst.ColorModel().Convert(srcCol)
 			dst.Set(x, y, dstCol)
+
+			ce := colorSub(dstCol, srcCol)
+
+			if x+1 < dst.Bounds().Max.X {
+				carriedError(x+1, y).Add(ce.Mul(7.0 / 16))
+			}
+			if x-1 >= 0 && y+1 < dst.Bounds().Max.Y {
+				carriedError(x-1, y+1).Add(ce.Mul(3.0 / 16))
+			}
+			if y+1 < dst.Bounds().Max.Y {
+				carriedError(x, y+1).Add(ce.Mul(5.0 / 16))
+			}
+			if x+1 < dst.Bounds().Max.X && y+1 < dst.Bounds().Max.Y {
+				carriedError(x+1, y+1).Add(ce.Mul(1.0 / 16))
+			}
 		}
 	}
 
@@ -432,4 +452,60 @@ func (si shiftedImage) At(x, y int) color.Color {
 }
 func (si shiftedImage) Set(x, y int, c color.Color) {
 	si.img.Set(x+si.img.Bounds().Min.X, y+si.img.Bounds().Min.Y, c)
+}
+
+type colorError [3]int32 // RGB; each in range [-0xffff, 0xffff]
+
+// Add adds the new error to this error, saturating correctly.
+func (ce *colorError) Add(x colorError) {
+	ce[0] = clipTo16(ce[0] + x[0])
+	ce[1] = clipTo16(ce[1] + x[1])
+	ce[2] = clipTo16(ce[2] + x[2])
+}
+
+// Mul returns a scaled version of the colorError. It assumes x is in [0,1].
+func (ce colorError) Mul(x float64) colorError {
+	return colorError{int32(x * float64(ce[0])), int32(x * float64(ce[1])), int32(x * float64(ce[2]))}
+}
+
+// Apply applies the error to a given color.
+func (ce colorError) Apply(x color.Color) color.Color {
+	r, g, b, _ := x.RGBA()
+	return color.RGBA64{
+		clipToU16(int32(r) + ce[0]),
+		clipToU16(int32(g) + ce[1]),
+		clipToU16(int32(b) + ce[2]),
+		0xFFFF,
+	}
+}
+
+// colorSub returns b-a.
+func colorSub(a, b color.Color) colorError {
+	ar, ag, ab, _ := a.RGBA()
+	br, bg, bb, _ := b.RGBA()
+	return colorError{
+		int32(br) - int32(ar),
+		int32(bg) - int32(ag),
+		int32(bb) - int32(ab),
+	}
+}
+
+func clipTo16(x int32) int32 {
+	if x < -0xffff {
+		return -0xffff
+	}
+	if x > 0xffff {
+		return 0xffff
+	}
+	return x
+}
+
+func clipToU16(x int32) uint16 {
+	if x < 0 {
+		return 0
+	}
+	if x > 0xffff {
+		return 0xffff
+	}
+	return uint16(x)
 }
