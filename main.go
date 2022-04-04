@@ -386,11 +386,14 @@ func drawRandomPhoto(dst draw.Image) error {
 		}
 	}
 
-	for y := dst.Bounds().Min.Y; y < dst.Bounds().Max.Y; y++ {
-		for x := dst.Bounds().Min.X; x < dst.Bounds().Max.X; x++ {
+	// To make the remaining code simpler, shift dst so that its bounds always starts at (0, 0).
+	dst = shiftedImage{dst}
+
+	for y := 0; y < dst.Bounds().Max.Y; y++ {
+		for x := 0; x < dst.Bounds().Max.X; x++ {
 			// TODO: downsample/dither/scale, etc.
-			srcX := src.Bounds().Min.X + int(scale*float64(x-dst.Bounds().Min.X))
-			srcY := src.Bounds().Min.Y + int(scale*float64(y-dst.Bounds().Min.Y))
+			srcX := src.Bounds().Min.X + int(scale*float64(x))
+			srcY := src.Bounds().Min.Y + int(scale*float64(y))
 			srcCol := src.At(srcX, srcY)
 			dstCol := dst.ColorModel().Convert(srcCol)
 			dst.Set(x, y, dstCol)
@@ -409,3 +412,24 @@ func (ci clippedImage) ColorModel() color.Model     { return ci.img.ColorModel()
 func (ci clippedImage) Bounds() image.Rectangle     { return ci.bounds }
 func (ci clippedImage) At(x, y int) color.Color     { return ci.img.At(x, y) }
 func (ci clippedImage) Set(x, y int, c color.Color) { ci.img.Set(x, y, c) }
+
+// shiftedImage wraps a draw.Image to make the bounds always start at (0, 0).
+type shiftedImage struct {
+	img draw.Image
+}
+
+func (si shiftedImage) ColorModel() color.Model { return si.img.ColorModel() }
+func (si shiftedImage) Bounds() image.Rectangle {
+	return image.Rectangle{
+		Max: image.Pt(
+			si.img.Bounds().Max.X-si.img.Bounds().Min.X,
+			si.img.Bounds().Max.Y-si.img.Bounds().Min.Y,
+		),
+	}
+}
+func (si shiftedImage) At(x, y int) color.Color {
+	return si.img.At(x+si.img.Bounds().Min.X, y+si.img.Bounds().Min.Y)
+}
+func (si shiftedImage) Set(x, y int, c color.Color) {
+	si.img.Set(x+si.img.Bounds().Min.X, y+si.img.Bounds().Min.Y, c)
+}
