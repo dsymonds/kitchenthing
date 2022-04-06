@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -37,6 +38,7 @@ type Config struct {
 	Font            string        `yaml:"font"`
 	RefreshPeriod   time.Duration `yaml:"refresh_period"`
 	TodoistAPIToken string        `yaml:"todoist_api_token"`
+	PhotosDir       string        `yaml:"photos_dir"`
 }
 
 func main() {
@@ -136,6 +138,8 @@ type renderer struct {
 	font *opentype.Font
 
 	tiny, small, normal, large, xlarge font.Face
+
+	photosDir string
 }
 
 func newRenderer(cfg Config) (renderer, error) {
@@ -192,6 +196,8 @@ func newRenderer(cfg Config) (renderer, error) {
 		normal: normal,
 		large:  large,
 		xlarge: xlarge,
+
+		photosDir: cfg.PhotosDir,
 	}, nil
 }
 
@@ -277,7 +283,7 @@ func (r renderer) RenderInfo(dst draw.Image, info Info) {
 			Max: image.Pt(dst.Bounds().Max.X-10, topOfFooterY-10),
 		},
 	}
-	if err := drawRandomPhoto(sub); err != nil {
+	if err := drawRandomPhoto(sub, r.photosDir); err != nil {
 		log.Printf("Drawing random photo: %v", err)
 	}
 }
@@ -340,8 +346,16 @@ func (r renderer) writeText(dst draw.Image, origin image.Point, anchor originAnc
 	return image.Pt(d.Dot.X.Round(), d.Dot.Y.Round())
 }
 
-func drawRandomPhoto(dst draw.Image) error {
-	opts, err := filepath.Glob("photos/*")
+func drawRandomPhoto(dst draw.Image, dir string) error {
+	if strings.HasPrefix(dir, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("os.UserHomeDir: %w", err)
+		}
+		dir = filepath.Join(home, dir[2:])
+	}
+
+	opts, err := filepath.Glob(filepath.Join(dir, "*"))
 	if err != nil {
 		return fmt.Errorf("globbing photos dir: %w", err)
 	}

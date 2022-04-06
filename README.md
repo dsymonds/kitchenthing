@@ -16,6 +16,7 @@ and create a `config.yaml` file like this:
 font: "NotoSans-Bold.ttf"
 refresh_period: 10m
 todoist_api_token: "..."
+photos_dir: photos
 ```
 
 Add a `photos` dir and put JPEGs and PNGs in it. Or not, and the rest will still work.
