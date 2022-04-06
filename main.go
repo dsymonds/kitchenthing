@@ -239,7 +239,7 @@ func BuildInfo(ctx context.Context, cfg Config) Info {
 
 func (r renderer) RenderInfo(dst draw.Image, info Info) {
 	// Date in top-right corner.
-	next := r.writeText(dst, image.Pt(-2, 2), topLeft, color.Black, r.xlarge, info.today.Format("Mon _2 Jan"))
+	next := r.writeText(dst, image.Pt(-2, 2), topLeft, color.Black, r.xlarge, info.today.Format("Mon 2 Jan"))
 
 	var line1 string
 	switch n := len(info.tasks); {
