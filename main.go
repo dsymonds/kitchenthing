@@ -283,8 +283,10 @@ func (r renderer) RenderInfo(dst draw.Image, info Info) {
 			Max: image.Pt(dst.Bounds().Max.X-10, topOfFooterY-10),
 		},
 	}
-	if err := drawRandomPhoto(sub, r.photosDir); err != nil {
-		log.Printf("Drawing random photo: %v", err)
+	if !sub.bounds.Empty() {
+		if err := drawRandomPhoto(sub, r.photosDir); err != nil {
+			log.Printf("Drawing random photo: %v", err)
+		}
 	}
 }
 
@@ -355,7 +357,7 @@ func drawRandomPhoto(dst draw.Image, dir string) error {
 		dir = filepath.Join(home, dir[2:])
 	}
 
-	opts, err := filepath.Glob(filepath.Join(dir, "*"))
+	opts, err := filepath.Glob(filepath.Join(dir, "*.jpg"))
 	if err != nil {
 		return fmt.Errorf("globbing photos dir: %w", err)
 	}
