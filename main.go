@@ -3,16 +3,21 @@ package main
 import (
 	"bytes"
 	"context"
+	_ "embed"
 	"flag"
 	"fmt"
+	"html/template"
 	"image"
 	"image/color"
 	"image/draw"
 	_ "image/jpeg"
 	"image/png"
+	"io"
 	"io/ioutil"
 	"log"
 	"math/rand"
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -29,6 +34,7 @@ import (
 var (
 	configFile = flag.String("config_file", "config.yaml", "configuration `filename`")
 	debug      = flag.Bool("debug", false, "whether to log extra information")
+	httpFlag   = flag.String("http", "localhost:8080", "`address` on which to serve HTTP")
 
 	testRender  = flag.String("test_render", "", "`filename` to render a PNG to")
 	testTodoist = flag.Bool("test_todoist", false, "whether to use fake Todoist data")
@@ -77,6 +83,12 @@ func main() {
 		return
 	}
 
+	s := &server{
+		startTime: time.Now(),
+	}
+	http.Handle("/", s)
+	log.SetOutput(io.MultiWriter(os.Stderr, s))
+
 	log.Printf("kitchenthing starting...")
 	time.Sleep(500 * time.Millisecond)
 
@@ -95,8 +107,42 @@ func main() {
 		cancel()
 	}()
 
+	// Start HTTP server.
+	httpServer := &http.Server{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		l, err := net.Listen("tcp", *httpFlag)
+		if err != nil {
+			log.Printf("net.Listen(_, %q): %v", *httpFlag, err)
+			cancel()
+		}
+
+		log.Printf("Serving HTTP on %s", l.Addr())
+		err = httpServer.Serve(l)
+		if err != http.ErrServerClosed {
+			log.Printf("http.Serve: %v", err)
+			cancel()
+		}
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		<-ctx.Done()
+		httpServer.Shutdown(context.Background())
+	}()
+
 	if err := p.Start(); err != nil {
 		log.Fatalf("Paper start: %v", err)
+	}
+
+	// Wait a bit. If things are still okay, consider this a successful startup.
+	select {
+	case <-ctx.Done():
+		goto exit
+	case <-time.After(2 * time.Second):
 	}
 
 	log.Printf("kitchenthing startup OK")
@@ -112,11 +158,76 @@ func main() {
 	}()
 
 	// Wait until interrupted or something else causes a graceful shutdown.
+exit:
 	<-ctx.Done()
 	wg.Wait()
 	p.Stop()
 	log.Printf("kitchenthing done")
 }
+
+type server struct {
+	startTime time.Time
+
+	mu     sync.Mutex
+	logBuf bytes.Buffer
+}
+
+func (s *server) Write(p []byte) (n int, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n, err = s.logBuf.Write(p)
+
+	// Shrink to stay in a sensible bounds.
+	const max = 100 << 10 // 100 KB should be plenty.
+	if s.logBuf.Len() > max {
+		b := s.logBuf.Bytes()
+		for len(b) > max {
+			i := bytes.IndexByte(b, '\n')
+			if i < 0 {
+				b = nil
+				break
+			}
+			b = b[i:]
+		}
+		copy(s.logBuf.Bytes(), b)
+		s.logBuf.Truncate(len(b))
+	}
+
+	return
+}
+
+func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
+		return
+	}
+
+	data := struct {
+		Uptime time.Duration
+		Logs   string
+	}{
+		Uptime: time.Since(s.startTime).Truncate(time.Minute),
+	}
+
+	s.mu.Lock()
+	data.Logs = s.logBuf.String()
+	s.mu.Unlock()
+
+	var buf bytes.Buffer
+	if err := frontHTMLTmpl.Execute(&buf, data); err != nil {
+		log.Printf("Executing template: %v", err)
+		http.Error(w, "Internal error executing template: "+err.Error(), 500)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	io.Copy(w, &buf)
+}
+
+//go:embed front.html.tmpl
+var frontHTML string
+
+var frontHTMLTmpl = template.Must(template.New("front").Parse(frontHTML))
 
 func loop(ctx context.Context, cfg Config, rend renderer, ref *refresher, p paper) error {
 	var prev displayData

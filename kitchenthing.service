@@ -6,7 +6,8 @@ After=multi-user.target
 Type=simple
 
 WorkingDirectory=/home/dsymonds/src/kitchenthing
-ExecStart=/home/dsymonds/src/kitchenthing/kitchenthing
+ExecStart=/home/dsymonds/src/kitchenthing/kitchenthing \
+  -http=:80
 
 Restart=always
 RestartSec=10
