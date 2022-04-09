@@ -59,12 +59,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("newRenderer: %v", err)
 	}
+	ref := newRefresher(cfg)
 
 	if *testRender != "" {
 		ctx, _ := context.WithTimeout(context.Background(), 30*time.Second)
 		img := image.NewPaletted(image.Rect(0, 0, 800, 480), staticPalette)
 		draw.Draw(img, img.Bounds(), &image.Uniform{color.White}, image.ZP, draw.Src)
-		rend.RenderInfo(img, BuildInfo(ctx, cfg))
+		rend.Render(img, ref.Refresh(ctx))
 		var buf bytes.Buffer
 		if err := (&png.Encoder{CompressionLevel: png.BestCompression}).Encode(&buf, img); err != nil {
 			log.Fatalf("Encoding PNG: %v", err)
@@ -104,7 +105,7 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := loop(ctx, cfg, rend, p); err != nil {
+		if err := loop(ctx, cfg, rend, ref, p); err != nil {
 			log.Printf("Loop failed: %v", err)
 		}
 		cancel()
@@ -117,19 +118,23 @@ func main() {
 	log.Printf("kitchenthing done")
 }
 
-func loop(ctx context.Context, cfg Config, rend renderer, p paper) error {
+func loop(ctx context.Context, cfg Config, rend renderer, ref *refresher, p paper) error {
+	var prev displayData
 	for {
-		info := BuildInfo(ctx, cfg)
+		data := ref.Refresh(ctx)
 
-		p.Init()
-		rend.RenderInfo(p, info)
-		p.DisplayRefresh()
-		p.Sleep()
+		if !data.Equal(prev) {
+			p.Init()
+			rend.Render(p, data)
+			p.DisplayRefresh()
+			p.Sleep()
+			prev = data
+		}
 
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(time.Until(info.nextRefresh)):
+		case <-time.After(cfg.RefreshPeriod):
 		}
 	}
 }
@@ -201,48 +206,72 @@ func newRenderer(cfg Config) (renderer, error) {
 	}, nil
 }
 
-// Info represents the information to be rendered.
-type Info struct {
-	today       time.Time
-	nextRefresh time.Time
+type refresher struct {
+	cfg Config
+	ts  *TodoistSyncer
+}
+
+func newRefresher(cfg Config) *refresher {
+	return &refresher{
+		cfg: cfg,
+		ts:  NewTodoistSyncer(cfg),
+	}
+}
+
+type displayData struct {
+	today time.Time // only day resolution
 
 	tasks []renderableTask
 
 	// TODO: report errors?
 }
 
-func BuildInfo(ctx context.Context, cfg Config) Info {
-	info := Info{
-		today:       time.Now(),
-		nextRefresh: time.Now().Add(cfg.RefreshPeriod),
+func (dd displayData) Equal(o displayData) bool {
+	if !dd.today.Equal(o.today) {
+		return false
+	}
+	if len(dd.tasks) != len(o.tasks) {
+		return false
+	}
+	for i := range dd.tasks {
+		if dd.tasks[i].Compare(o.tasks[i]) != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func (r *refresher) Refresh(ctx context.Context) displayData {
+	d, m, y := time.Now().Date()
+	dd := displayData{
+		today: time.Date(d, m, y, 0, 0, 0, 0, time.Local),
 	}
 	if *testTodoist {
-		info.tasks = []renderableTask{
+		dd.tasks = []renderableTask{
 			{4, "something really important", "David", "House"},
 			{3, "something important", "", "House"},
 			{2, "something nice to do", "", "Other"},
 			{1, "if there's time", "", "Other"},
 		}
-		return info
+		return dd
 	}
 
-	tasks, err := TodoistTasks(ctx, cfg)
-	if err != nil {
+	if err := r.ts.Sync(ctx); err != nil {
 		// TODO: add error to screen? or some sort of simple message?
-		log.Printf("Fetching Todoist tasks: %v", err)
+		log.Printf("Syncing from Todoist: %v", err)
 	} else {
-		info.tasks = tasks
+		dd.tasks = r.ts.RenderableTasks()
 	}
 
-	return info
+	return dd
 }
 
-func (r renderer) RenderInfo(dst draw.Image, info Info) {
+func (r renderer) Render(dst draw.Image, data displayData) {
 	// Date in top-right corner.
-	next := r.writeText(dst, image.Pt(-2, 2), topLeft, color.Black, r.xlarge, info.today.Format("Mon 2 Jan"))
+	next := r.writeText(dst, image.Pt(-2, 2), topLeft, color.Black, r.xlarge, data.today.Format("Mon 2 Jan"))
 
 	var line1 string
-	switch n := len(info.tasks); {
+	switch n := len(data.tasks); {
 	case n == 0:
 		line1 = "No tasks remaining for today!"
 	case n == 1:
@@ -259,7 +288,7 @@ func (r renderer) RenderInfo(dst draw.Image, info Info) {
 
 	listVPitch := r.normal.Metrics().Height.Ceil()
 	listBase := image.Pt(10, next.Y+2+listVPitch) // baseline of each list entry
-	for i, task := range info.tasks {             // TODO: adjust font size for task count?
+	for i, task := range data.tasks {             // TODO: adjust font size for task count?
 		txt := fmt.Sprintf("[P%d] %s", 4-task.Priority, task.Title)
 		if task.Assignee != "" {
 			txt += " (" + task.Assignee + ")"
@@ -271,9 +300,10 @@ func (r renderer) RenderInfo(dst draw.Image, info Info) {
 		origin = image.Pt(next.X+10, baselineY)
 		r.writeText(dst, origin, bottomLeft, colorRed, r.small, task.Project)
 	}
-	bottomOfListY := listBase.Y + (len(info.tasks)-1)*listVPitch
+	bottomOfListY := listBase.Y + (len(data.tasks)-1)*listVPitch
 
-	next = r.writeText(dst, image.Pt(-2, -2), bottomLeft, color.Black, r.tiny, "Next update: ~"+info.nextRefresh.Format("15:04:05"))
+	// TODO: Find something more interesting to squeeze in?
+	next = r.writeText(dst, image.Pt(-2, -2), bottomLeft, color.Black, r.tiny, "π")
 	topOfFooterY := next.Y
 
 	sub := clippedImage{
