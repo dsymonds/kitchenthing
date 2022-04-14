@@ -153,7 +153,7 @@ func (ts *TodoistSyncer) Sync(ctx context.Context) error {
 		"resource_types": []string{`["projects","items","collaborators"]`},
 	}, &data)
 	if err != nil {
-		return fmt.Errorf("syncing from Todoist: %w", err)
+		return err
 	}
 
 	if data.FullSync || ts.projects == nil {
@@ -195,7 +195,7 @@ func (ts *TodoistSyncer) post(ctx context.Context, path string, params url.Value
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("performing HTTP request: %w", err)
+		return err
 	}
 	body, err := ioutil.ReadAll(resp.Body)
 	resp.Body.Close()

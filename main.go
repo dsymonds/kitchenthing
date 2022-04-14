@@ -235,6 +235,7 @@ func loop(ctx context.Context, cfg Config, rend renderer, ref *refresher, p pape
 		data := ref.Refresh(ctx)
 
 		if !data.Equal(prev) {
+			log.Printf("New data to be displayed; refreshing now")
 			p.Init()
 			rend.Render(p, data)
 			p.DisplayRefresh()
@@ -269,35 +270,35 @@ func newRenderer(cfg Config) (renderer, error) {
 	if err != nil {
 		return renderer{}, fmt.Errorf("parsing font data: %w", err)
 	}
-	tiny, err := opentype.NewFace(font, &opentype.FaceOptions{ // TODO: need hinting?
+	tiny, err := opentype.NewFace(font, &opentype.FaceOptions{
 		Size: 10, // points
 		DPI:  dpi,
 	})
 	if err != nil {
 		return renderer{}, fmt.Errorf("making tiny font face: %w", err)
 	}
-	small, err := opentype.NewFace(font, &opentype.FaceOptions{ // TODO: need hinting?
+	small, err := opentype.NewFace(font, &opentype.FaceOptions{
 		Size: 12, // points
 		DPI:  dpi,
 	})
 	if err != nil {
 		return renderer{}, fmt.Errorf("making tiny font face: %w", err)
 	}
-	normal, err := opentype.NewFace(font, &opentype.FaceOptions{ // TODO: need hinting?
+	normal, err := opentype.NewFace(font, &opentype.FaceOptions{
 		Size: 16, // points
 		DPI:  dpi,
 	})
 	if err != nil {
 		return renderer{}, fmt.Errorf("making tiny font face: %w", err)
 	}
-	large, err := opentype.NewFace(font, &opentype.FaceOptions{ // TODO: need hinting?
+	large, err := opentype.NewFace(font, &opentype.FaceOptions{
 		Size: 20, // points
 		DPI:  dpi,
 	})
 	if err != nil {
 		return renderer{}, fmt.Errorf("making tiny font face: %w", err)
 	}
-	xlarge, err := opentype.NewFace(font, &opentype.FaceOptions{ // TODO: need hinting?
+	xlarge, err := opentype.NewFace(font, &opentype.FaceOptions{
 		Size: 36, // points
 		DPI:  dpi,
 	})
@@ -415,13 +416,13 @@ func (r renderer) Render(dst draw.Image, data displayData) {
 
 	// TODO: Find something more interesting to squeeze in?
 	next = r.writeText(dst, image.Pt(-2, -2), bottomLeft, color.Black, r.tiny, "π")
-	topOfFooterY := next.Y
+	topOfFooterY := dst.Bounds().Max.Y // or use next.Y-8 if there's a substantial footer
 
 	sub := clippedImage{
 		img: dst,
 		bounds: image.Rectangle{
 			Min: image.Pt(10, bottomOfListY+10),
-			Max: image.Pt(dst.Bounds().Max.X-10, topOfFooterY-10),
+			Max: image.Pt(dst.Bounds().Max.X-10, topOfFooterY-2),
 		},
 	}
 	if !sub.bounds.Empty() {
