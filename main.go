@@ -426,7 +426,7 @@ func (r renderer) Render(dst draw.Image, data displayData) {
 			Max: image.Pt(dst.Bounds().Max.X-10, topOfFooterY-2),
 		},
 	}
-	if !sub.bounds.Empty() {
+	if !sub.bounds.Empty() && r.photosDir != "" {
 		if err := drawRandomPhoto(sub, r.photosDir); err != nil {
 			log.Printf("Drawing random photo: %v", err)
 		}
