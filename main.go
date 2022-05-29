@@ -381,23 +381,24 @@ func (r *refresher) Refresh(ctx context.Context) displayData {
 
 func (r renderer) Render(dst draw.Image, data displayData) {
 	// Date in top-right corner.
-	next := r.writeText(dst, image.Pt(-2, 2), topLeft, color.Black, r.xlarge, data.today.Format("Mon 2 Jan"))
+	dateBL := r.writeText(dst, image.Pt(-2, 2), topLeft, color.Black, r.xlarge, data.today.Format("Mon 2 Jan"))
 
 	var line1 string
 	switch n := len(data.tasks); {
 	case n == 0:
-		line1 = "No tasks remaining for today!"
+		line1 = "All done for today!"
 	case n == 1:
-		line1 = "Just one more thing to do:"
+		line1 = "Just one more thing:"
 	case n == 2:
-		line1 = "A couple of tasks to tick off:"
+		line1 = "A couple of tasks:"
 	case n < 5:
-		line1 = "A few things that need doing:"
+		line1 = "A few things to do:"
 	default:
-		line1 = "Quite a bit to get done, eh?"
+		line1 = "Quite a bit, eh?"
 	}
-	next.X = 2
-	next = r.writeText(dst, next, topLeft, color.Black, r.large, line1)
+	next := image.Pt(10, dateBL.Y)
+	r.writeText(dst, next, bottomLeft, color.Black, r.large, line1)
+	next = image.Pt(2, dateBL.Y)
 
 	listVPitch := r.normal.Metrics().Height.Ceil()
 	listBase := image.Pt(10, next.Y+2+listVPitch) // baseline of each list entry
@@ -445,6 +446,7 @@ const (
 // It returns the opposite corner.
 func (r renderer) writeText(dst draw.Image, origin image.Point, anchor originAnchor, col color.Color, face font.Face, text string) (opposite image.Point) {
 	// TODO: fix this to work in case dst's bounds is not (0, 0).
+	// TODO: It'd be nice to log a message if the text busts the bounds of dst.
 
 	d := &font.Drawer{
 		Dst:  dst,
