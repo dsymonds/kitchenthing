@@ -15,7 +15,8 @@ import (
 )
 
 type renderableTask struct {
-	Priority int // 4, 3, 2, 1
+	Priority int       // 4, 3, 2, 1
+	Time     time.Time // to the minute; only set for tasks with times
 	Title    string
 	Assignee string // may be empty
 	Project  string
@@ -25,6 +26,15 @@ func (rt renderableTask) Compare(o renderableTask) int {
 	if rt.Priority != o.Priority {
 		return cmp(o.Priority, rt.Priority) // inverse; higher priority first
 	}
+	if !rt.Time.IsZero() && !o.Time.IsZero() {
+		if c := timeCompare(rt.Time, o.Time); c != 0 {
+			return c
+		}
+	} else if !rt.Time.IsZero() {
+		return -1
+	} else if !o.Time.IsZero() {
+		return 1
+	}
 	if rt.Project != o.Project {
 		return strings.Compare(rt.Project, o.Project)
 	}
@@ -32,6 +42,16 @@ func (rt renderableTask) Compare(o renderableTask) int {
 		return strings.Compare(rt.Title, o.Title)
 	}
 	return strings.Compare(rt.Assignee, o.Assignee)
+}
+
+func timeCompare(a, b time.Time) int {
+	if a.Before(b) {
+		return -1
+	}
+	if a.After(b) {
+		return 1
+	}
+	return 0
 }
 
 type todoistProject struct {
@@ -62,10 +82,12 @@ type todoistTask struct {
 type due struct {
 	Date string `json:"date"` // YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS or YYYY-MM-DDTHH:MM:SSZ
 	// Parsed from Date on sync.
-	y   int
-	m   time.Month
-	d   int
-	due time.Time
+	y       int
+	m       time.Month
+	d       int
+	hasTime bool
+	hh, mm  int // only if hasTime
+	due     time.Time
 
 	IsRecurring bool `json:"is_recurring"`
 }
@@ -119,6 +141,8 @@ func (dd *due) update() error {
 		return fmt.Errorf("parsing due date with time %q: %w", dd.Date, err)
 	}
 	dd.y, dd.m, dd.d = t.Date()
+	dd.hasTime = true
+	dd.hh, dd.mm, _ = t.Clock()
 	dd.due = t
 	return nil
 }
@@ -234,6 +258,9 @@ func (ts *TodoistSyncer) RenderableTasks() []renderableTask {
 				name = name[:i]
 			}
 			rt.Assignee = name
+		}
+		if task.Due.hasTime {
+			rt.Time = task.Due.due
 		}
 		res = append(res, rt)
 	}
