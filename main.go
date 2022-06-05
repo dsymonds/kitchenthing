@@ -62,7 +62,13 @@ func main() {
 		log.Fatalf("Parsing config from %s: %v", *configFile, err)
 	}
 
-	rend, err := newRenderer(cfg)
+	s := &server{
+		startTime: time.Now(),
+		cfg:       cfg,
+	}
+	http.Handle("/", s)
+
+	rend, err := newRenderer(cfg, s.pickPhoto)
 	if err != nil {
 		log.Fatalf("newRenderer: %v", err)
 	}
@@ -84,12 +90,7 @@ func main() {
 		return
 	}
 
-	s := &server{
-		startTime: time.Now(),
-	}
-	http.Handle("/", s)
 	log.SetOutput(io.MultiWriter(os.Stderr, s))
-
 	log.Printf("kitchenthing starting...")
 	time.Sleep(500 * time.Millisecond)
 
@@ -168,9 +169,11 @@ exit:
 
 type server struct {
 	startTime time.Time
+	cfg       Config
 
-	mu     sync.Mutex
-	logBuf bytes.Buffer
+	mu        sync.Mutex
+	logBuf    bytes.Buffer
+	nextPhoto string
 }
 
 func (s *server) Write(p []byte) (n int, err error) {
@@ -197,15 +200,54 @@ func (s *server) Write(p []byte) (n int, err error) {
 	return
 }
 
-func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
-		http.NotFound(w, r)
-		return
+func (s *server) pickPhoto() (string, error) {
+	if s.cfg.PhotosDir == "" {
+		return "", nil
+	}
+	opts, err := photoOptions(s.cfg.PhotosDir)
+	if err != nil {
+		return "", err
+	}
+	if len(opts) == 0 {
+		return "", fmt.Errorf("no files in photos dir")
 	}
 
+	// Use a previously-selected photo.
+	// Always do this here so we can validate against the real files,
+	// which avoids any risk of an attack making us load another file.
+	s.mu.Lock()
+	sel := s.nextPhoto
+	s.nextPhoto = ""
+	s.mu.Unlock()
+	if sel != "" {
+		for _, opt := range opts {
+			if sel == opt {
+				log.Printf("Using previously selected photo %q", sel)
+				return sel, nil
+			}
+		}
+		log.Printf("Error: previously selected photo %q does not exist; ignoring", sel)
+	}
+
+	return opts[rand.Intn(len(opts))], nil
+}
+
+func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	switch r.URL.Path {
+	default:
+		http.NotFound(w, r)
+	case "/":
+		s.serveFront(w, r)
+	case "/set-next-photo":
+		s.serveSetNextPhoto(w, r)
+	}
+}
+
+func (s *server) serveFront(w http.ResponseWriter, r *http.Request) {
 	data := struct {
 		Uptime time.Duration
 		Logs   string
+		Photos []string
 	}{
 		Uptime: time.Since(s.startTime).Truncate(time.Minute),
 	}
@@ -213,6 +255,15 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	data.Logs = s.logBuf.String()
 	s.mu.Unlock()
+
+	if s.cfg.PhotosDir != "" {
+		var err error
+		data.Photos, err = photoOptions(s.cfg.PhotosDir)
+		if err != nil {
+			log.Printf("Looking for photo options: %v", err)
+			// Continue anyway.
+		}
+	}
 
 	var buf bytes.Buffer
 	if err := frontHTMLTmpl.Execute(&buf, data); err != nil {
@@ -229,6 +280,22 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 var frontHTML string
 
 var frontHTMLTmpl = template.Must(template.New("front").Parse(frontHTML))
+
+func (s *server) serveSetNextPhoto(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+	sel := r.PostFormValue("photo")
+
+	// In theory we should do an XSRF check here, but the threat model isn't worth the effort.
+
+	s.mu.Lock()
+	s.nextPhoto = sel
+	s.mu.Unlock()
+	log.Printf("Selected %q as the next photo to use", sel)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
 
 func loop(ctx context.Context, cfg Config, rend renderer, ref *refresher, p paper) error {
 	var prev displayData
@@ -257,10 +324,10 @@ type renderer struct {
 
 	tiny, small, normal, large, xlarge font.Face
 
-	photosDir string
+	photoPicker func() (string, error)
 }
 
-func newRenderer(cfg Config) (renderer, error) {
+func newRenderer(cfg Config, photoPicker func() (string, error)) (renderer, error) {
 	const dpi = 125 // per paper hardware
 
 	fdata, err := ioutil.ReadFile(cfg.Font)
@@ -315,7 +382,7 @@ func newRenderer(cfg Config) (renderer, error) {
 		large:  large,
 		xlarge: xlarge,
 
-		photosDir: cfg.PhotosDir,
+		photoPicker: photoPicker,
 	}, nil
 }
 
@@ -432,9 +499,14 @@ func (r renderer) Render(dst draw.Image, data displayData) {
 			Max: image.Pt(dst.Bounds().Max.X-10, topOfFooterY-2),
 		},
 	}
-	if !sub.bounds.Empty() && r.photosDir != "" {
-		if err := drawRandomPhoto(sub, r.photosDir); err != nil {
-			log.Printf("Drawing random photo: %v", err)
+	if !sub.bounds.Empty() {
+		photo, err := r.photoPicker()
+		if err != nil {
+			log.Printf("Picking random photo: %v", err)
+		} else if photo != "" {
+			if err := drawPhoto(sub, photo); err != nil {
+				log.Printf("Drawing random photo: %v", err)
+			}
 		}
 	}
 }
@@ -498,23 +570,23 @@ func (r renderer) writeText(dst draw.Image, origin image.Point, anchor originAnc
 	return image.Pt(d.Dot.X.Round(), d.Dot.Y.Round())
 }
 
-func drawRandomPhoto(dst draw.Image, dir string) error {
+func photoOptions(dir string) ([]string, error) {
 	if strings.HasPrefix(dir, "~/") {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return fmt.Errorf("os.UserHomeDir: %w", err)
+			return nil, fmt.Errorf("os.UserHomeDir: %w", err)
 		}
 		dir = filepath.Join(home, dir[2:])
 	}
 
 	opts, err := filepath.Glob(filepath.Join(dir, "*.jpg"))
 	if err != nil {
-		return fmt.Errorf("globbing photos dir: %w", err)
+		return nil, fmt.Errorf("globbing photos dir: %w", err)
 	}
-	if len(opts) == 0 {
-		return fmt.Errorf("no files in photos dir")
-	}
-	filename := opts[rand.Intn(len(opts))]
+	return opts, nil
+}
+
+func drawPhoto(dst draw.Image, filename string) error {
 	f, err := os.Open(filename)
 	if err != nil {
 		return fmt.Errorf("opening %s: %w", filename, err)

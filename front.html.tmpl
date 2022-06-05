@@ -16,6 +16,18 @@
 Hi. I've been running for {{.Uptime}}.
 </p>
 
+{{with .Photos}}
+<form action="/set-next-photo" method="POST">
+<label for="photo-select">Next photo to use:</label>
+<select name="photo" id="photo-select">
+	{{range .}}
+	<option value="{{.}}">{{.}}</option>
+	{{end}}
+</select>
+<input type="submit" value="Set">
+</form>
+{{end}}
+
 <pre>
 {{.Logs}}
 </pre>
