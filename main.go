@@ -441,9 +441,9 @@ func (r *refresher) Refresh(ctx context.Context) displayData {
 	if err := r.ts.Sync(ctx); err != nil {
 		// TODO: add error to screen? or some sort of simple message?
 		log.Printf("Syncing from Todoist: %v", err)
-	} else {
-		dd.tasks = r.ts.RenderableTasks()
+		// Continue on and use any existing data.
 	}
+	dd.tasks = r.ts.RenderableTasks()
 
 	return dd
 }
