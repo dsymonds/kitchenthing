@@ -18,6 +18,7 @@ type renderableTask struct {
 	Priority int       // 4, 3, 2, 1
 	Time     time.Time // to the minute; only set for tasks with times
 	Title    string
+	HasDesc  bool   // whether there's a description
 	Assignee string // may be empty
 	Project  string
 }
@@ -41,6 +42,12 @@ func (rt renderableTask) Compare(o renderableTask) int {
 	if rt.Title != o.Title {
 		return strings.Compare(rt.Title, o.Title)
 	}
+	if rt.HasDesc != o.HasDesc {
+		if rt.HasDesc {
+			return -1
+		}
+		return 1
+	}
 	return strings.Compare(rt.Assignee, o.Assignee)
 }
 
@@ -53,6 +60,8 @@ func timeCompare(a, b time.Time) int {
 	}
 	return 0
 }
+
+// See https://developer.todoist.com/sync/v8/ for the reference for types and protocols.
 
 type todoistProject struct {
 	ID     int64  `json:"id"`
@@ -69,10 +78,11 @@ type todoistCollaborator struct {
 }
 
 type todoistTask struct {
-	ID        int64  `json:"id"`
-	ProjectID int64  `json:"project_id"`
-	Content   string `json:"content"`
-	Priority  int    `json:"priority"`
+	ID          int64  `json:"id"`
+	ProjectID   int64  `json:"project_id"`
+	Content     string `json:"content"`     // title of task
+	Description string `json:"description"` // secondary info
+	Priority    int    `json:"priority"`
 
 	Responsible *int64 `json:"responsible_uid"`
 	Checked     int    `json:"checked"`
@@ -250,6 +260,7 @@ func (ts *TodoistSyncer) RenderableTasks() []renderableTask {
 		rt := renderableTask{
 			Priority: task.Priority,
 			Title:    task.Content,
+			HasDesc:  task.Description != "",
 			Project:  proj.Name,
 		}
 		if task.Responsible != nil {

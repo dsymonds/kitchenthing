@@ -430,10 +430,10 @@ func (r *refresher) Refresh(ctx context.Context) displayData {
 		t0 := time.Time{}
 		tset := dd.today.Add(17*time.Hour + 30*time.Minute) // 5:30pm
 		dd.tasks = []renderableTask{
-			{4, t0, "something really important", "David", "House"},
-			{3, tset, "something important", "", "House"},
-			{2, t0, "something nice to do", "", "Other"},
-			{1, t0, "if there's time", "", "Other"},
+			{4, t0, "something really important", false, "David", "House"},
+			{3, tset, "something important", true, "", "House"},
+			{2, t0, "something nice to do", false, "", "Other"},
+			{1, t0, "if there's time", false, "", "Other"},
 		}
 		return dd
 	}
@@ -473,6 +473,9 @@ func (r renderer) Render(dst draw.Image, data displayData) {
 	listBase := image.Pt(10, next.Y+2+listVPitch) // baseline of each list entry
 	for i, task := range data.tasks {             // TODO: adjust font size for task count?
 		txt := fmt.Sprintf("[P%d] %s", 4-task.Priority, task.Title)
+		if task.HasDesc {
+			txt += " ♫"
+		}
 		if !task.Time.IsZero() {
 			txt += " <" + task.Time.Format(time.Kitchen) + ">"
 		}
