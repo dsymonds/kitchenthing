@@ -448,25 +448,52 @@ func (r *refresher) Refresh(ctx context.Context) displayData {
 	return dd
 }
 
+// Subtitle messages.
+var (
+	zeroMessages = []string{
+		"All done for today!",
+		"Everything got done; awesome!",
+		"Good job everyone!",
+	}
+	oneMessages = []string{
+		"Just one more thing:",
+		"mō ichido.",
+		"uno más!",
+	}
+	twoMessages = []string{
+		"A couple of tasks:",
+		"Two things to do:",
+	}
+	fewMessages = []string{
+		"A few things to do:",
+		"Only a handful of tasks:",
+	}
+	lotsMessages = []string{
+		"Quite a bit, eh?",
+		"Wowsa, better get to work.",
+	}
+)
+
 func (r renderer) Render(dst draw.Image, data displayData) {
 	// Date in top-right corner.
 	dateBL := r.writeText(dst, image.Pt(-2, 2), topLeft, color.Black, r.xlarge, data.today.Format("Mon 2 Jan"))
 
-	var line1 string
+	var subtitles []string
 	switch n := len(data.tasks); {
 	case n == 0:
-		line1 = "All done for today!"
+		subtitles = zeroMessages
 	case n == 1:
-		line1 = "Just one more thing:"
+		subtitles = oneMessages
 	case n == 2:
-		line1 = "A couple of tasks:"
+		subtitles = twoMessages
 	case n < 5:
-		line1 = "A few things to do:"
+		subtitles = fewMessages
 	default:
-		line1 = "Quite a bit, eh?"
+		subtitles = lotsMessages
 	}
+	subtitle := subtitles[rand.Intn(len(subtitles))]
 	next := image.Pt(10, dateBL.Y)
-	r.writeText(dst, next, bottomLeft, color.Black, r.large, line1)
+	r.writeText(dst, next, bottomLeft, color.Black, r.large, subtitle)
 	next = image.Pt(2, dateBL.Y)
 
 	listVPitch := r.normal.Metrics().Height.Ceil()
