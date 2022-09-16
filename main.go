@@ -452,7 +452,7 @@ func (r *refresher) Refresh(ctx context.Context) displayData {
 var (
 	zeroMessages = []string{
 		"All done for today!",
-		"Everything got done; awesome!",
+		"Everything got done!",
 		"Good job everyone!",
 	}
 	oneMessages = []string{
@@ -466,11 +466,11 @@ var (
 	}
 	fewMessages = []string{
 		"A few things to do:",
-		"Only a handful of tasks:",
+		"Only a handful:",
 	}
 	lotsMessages = []string{
 		"Quite a bit, eh?",
-		"Wowsa, better get to work.",
+		"Wowsa, that's a lot.",
 	}
 )
 
