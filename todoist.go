@@ -61,16 +61,16 @@ func timeCompare(a, b time.Time) int {
 	return 0
 }
 
-// See https://developer.todoist.com/sync/v8/ for the reference for types and protocols.
+// See https://developer.todoist.com/sync/v9/ for the reference for types and protocols.
 
 type todoistProject struct {
-	ID     int64  `json:"id"`
+	ID     string `json:"id"`
 	Name   string `json:"name"`
 	Shared bool   `json:"shared"`
 }
 
 type todoistCollaborator struct {
-	ID int64 `json:"id"`
+	ID string `json:"id"`
 
 	FullName string `json:"full_name"`
 
@@ -78,15 +78,15 @@ type todoistCollaborator struct {
 }
 
 type todoistTask struct {
-	ID          int64  `json:"id"`
-	ProjectID   int64  `json:"project_id"`
+	ID          string `json:"id"`
+	ProjectID   string `json:"project_id"`
 	Content     string `json:"content"`     // title of task
 	Description string `json:"description"` // secondary info
 	Priority    int    `json:"priority"`
 
-	Responsible *int64 `json:"responsible_uid"`
-	Checked     int    `json:"checked"`
-	Due         *due   `json:"due"`
+	Responsible *string `json:"responsible_uid"`
+	Checked     bool    `json:"checked"`
+	Due         *due    `json:"due"`
 }
 
 type due struct {
@@ -160,11 +160,11 @@ func (dd *due) update() error {
 type TodoistSyncer struct {
 	apiToken string
 
-	// State.
+	// State. Maps are keyed by the relevant ID.
 	syncToken     string
-	projects      map[int64]todoistProject
-	collaborators map[int64]todoistCollaborator
-	tasks         map[int64]todoistTask // Only incomplete
+	projects      map[string]todoistProject
+	collaborators map[string]todoistCollaborator
+	tasks         map[string]todoistTask // Only incomplete
 }
 
 func NewTodoistSyncer(cfg Config) *TodoistSyncer {
@@ -182,7 +182,7 @@ func (ts *TodoistSyncer) Sync(ctx context.Context) error {
 		Collaborators []todoistCollaborator `json:"collaborators"`
 		Items         []todoistTask         `json:"items"`
 	}
-	err := ts.post(ctx, "/sync/v8/sync", url.Values{
+	err := ts.post(ctx, "/sync/v9/sync", url.Values{
 		"sync_token":     []string{ts.syncToken},
 		"resource_types": []string{`["projects","items","collaborators"]`},
 	}, &data)
@@ -192,9 +192,9 @@ func (ts *TodoistSyncer) Sync(ctx context.Context) error {
 
 	if data.FullSync || ts.projects == nil {
 		// Server says this is a full sync, or this is the first sync we've attempted.
-		ts.projects = make(map[int64]todoistProject)
-		ts.collaborators = make(map[int64]todoistCollaborator)
-		ts.tasks = make(map[int64]todoistTask)
+		ts.projects = make(map[string]todoistProject)
+		ts.collaborators = make(map[string]todoistCollaborator)
+		ts.tasks = make(map[string]todoistTask)
 	}
 	for _, p := range data.Projects {
 		// TODO: Handle deletions. This is pretty uncommon.
@@ -205,7 +205,7 @@ func (ts *TodoistSyncer) Sync(ctx context.Context) error {
 		ts.collaborators[c.ID] = c
 	}
 	for _, item := range data.Items {
-		if item.Checked > 0 {
+		if item.Checked {
 			delete(ts.tasks, item.ID)
 		} else {
 			if item.Due != nil {
