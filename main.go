@@ -26,6 +26,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dsymonds/todoist"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/opentype"
 	"golang.org/x/image/math/fixed"
@@ -388,13 +389,13 @@ func newRenderer(cfg Config, photoPicker func() (string, error)) (renderer, erro
 
 type refresher struct {
 	cfg Config
-	ts  *TodoistSyncer
+	ts  *todoist.Syncer
 }
 
 func newRefresher(cfg Config) *refresher {
 	return &refresher{
 		cfg: cfg,
-		ts:  NewTodoistSyncer(cfg),
+		ts:  todoist.NewSyncer(cfg.TodoistAPIToken),
 	}
 }
 
@@ -443,7 +444,7 @@ func (r *refresher) Refresh(ctx context.Context) displayData {
 		log.Printf("Syncing from Todoist: %v", err)
 		// Continue on and use any existing data.
 	}
-	dd.tasks = r.ts.RenderableTasks()
+	dd.tasks = RenderableTasks(r.ts)
 
 	return dd
 }
