@@ -3,7 +3,7 @@ module github.com/dsymonds/kitchenthing
 go 1.17
 
 require (
-	github.com/dsymonds/todoist v0.0.0-20230226022641-a19ae205ee7e
+	github.com/dsymonds/todoist v0.0.0-20230226031646-65e293f0f766
 	github.com/stianeikeland/go-rpio/v4 v4.6.0
 	golang.org/x/image v0.0.0-20220321031419-a8550c1d254a
 	gopkg.in/yaml.v2 v2.4.0
