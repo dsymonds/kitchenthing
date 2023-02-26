@@ -17,6 +17,9 @@ type renderableTask struct {
 	HasDesc  bool   // whether there's a description
 	Assignee string // may be empty
 	Project  string
+
+	// Progress:
+	Done, Total int
 }
 
 func (rt renderableTask) Compare(o renderableTask) int {
@@ -43,6 +46,12 @@ func (rt renderableTask) Compare(o renderableTask) int {
 			return -1
 		}
 		return 1
+	}
+	if rt.Total != o.Total {
+		return cmp(rt.Total, o.Total)
+	}
+	if rt.Done != o.Done {
+		return cmp(rt.Done, o.Done)
 	}
 	return strings.Compare(rt.Assignee, o.Assignee)
 }
@@ -81,6 +90,9 @@ func RenderableTasks(ts *todoist.Syncer) []renderableTask {
 			Title:    task.Content,
 			HasDesc:  task.Description != "",
 			Project:  proj.Name,
+
+			Done:  task.ChildCompleted,
+			Total: task.ChildCompleted + task.ChildRemaining,
 		}
 		if task.Responsible != nil {
 			name := ts.Collaborators[*task.Responsible].FullName
