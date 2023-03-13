@@ -47,6 +47,8 @@ type Config struct {
 	RefreshPeriod   time.Duration `yaml:"refresh_period"`
 	TodoistAPIToken string        `yaml:"todoist_api_token"`
 	PhotosDir       string        `yaml:"photos_dir"`
+
+	Alertmanager string `yaml:"alertmanager"`
 }
 
 func main() {
@@ -405,6 +407,8 @@ type displayData struct {
 	tasks []renderableTask
 
 	// TODO: report errors?
+
+	alerts []Alert
 }
 
 func (dd displayData) Equal(o displayData) bool {
@@ -416,6 +420,14 @@ func (dd displayData) Equal(o displayData) bool {
 	}
 	for i := range dd.tasks {
 		if dd.tasks[i].Compare(o.tasks[i]) != 0 {
+			return false
+		}
+	}
+	if len(dd.alerts) != len(o.alerts) {
+		return false
+	}
+	for i := range dd.alerts {
+		if dd.alerts[i] != o.alerts[i] {
 			return false
 		}
 	}
@@ -445,6 +457,15 @@ func (r *refresher) Refresh(ctx context.Context) displayData {
 		// Continue on and use any existing data.
 	}
 	dd.tasks = RenderableTasks(r.ts)
+
+	if r.cfg.Alertmanager != "" {
+		as, err := FetchAlerts(ctx, r.cfg.Alertmanager)
+		if err != nil {
+			log.Printf("Fetching alerts from Alertmanager %s: %v", r.cfg.Alertmanager, err)
+		} else {
+			dd.alerts = as
+		}
+	}
 
 	return dd
 }
@@ -521,10 +542,29 @@ func (r renderer) Render(dst draw.Image, data displayData) {
 		r.writeText(dst, origin, bottomLeft, colorRed, r.small, task.Project)
 	}
 	bottomOfListY := listBase.Y + (len(data.tasks)-1)*listVPitch
+	topOfFooterY := dst.Bounds().Max.Y - 2
 
-	// TODO: Find something more interesting to squeeze in?
-	next = r.writeText(dst, image.Pt(-2, -2), bottomLeft, color.Black, r.tiny, "π")
-	topOfFooterY := dst.Bounds().Max.Y // or use next.Y-8 if there's a substantial footer
+	// Render alerts from the bottom up.
+	alertFont := r.tiny
+	alertListVPitch := alertFont.Metrics().Height.Ceil()
+	for i := len(data.alerts) - 1; i >= 0; i-- {
+		// Stop before we get to the task list.
+		if topOfFooterY-alertListVPitch <= bottomOfListY {
+			break
+		}
+
+		alert := data.alerts[i]
+		origin := image.Pt(2, topOfFooterY)
+		next := r.writeText(dst, origin, bottomLeft, colorRed, alertFont, alert.Summary)
+		origin.X = next.X
+		r.writeText(dst, origin, bottomLeft, color.Black, alertFont, ": "+alert.Description)
+
+		topOfFooterY -= alertListVPitch
+	}
+
+	if len(data.alerts) == 0 {
+		r.writeText(dst, image.Pt(-2, -2), bottomLeft, color.Black, r.tiny, "π")
+	}
 
 	sub := clippedImage{
 		img: dst,
