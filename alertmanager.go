@@ -13,9 +13,15 @@ import (
 // Alertmanager integration
 
 type Alert struct {
+	Fingerprint string // The uniqueness key for the alert.
+
 	Summary     string
 	Description string
 }
+
+// Same reports whether the alert is the same as some other alert.
+// This works off the alert fingerprint instead of its annotations.
+func (a Alert) Same(other Alert) bool { return a.Fingerprint == other.Fingerprint }
 
 func FetchAlerts(ctx context.Context, amAddr string) ([]Alert, error) {
 	u := "http://" + amAddr + "/api/v2/alerts" // This gets all active alerts, even silenced/inhibited ones.
@@ -45,16 +51,14 @@ func FetchAlerts(ctx context.Context, amAddr string) ([]Alert, error) {
 	var alerts []Alert
 	for _, ga := range gas {
 		alerts = append(alerts, Alert{
+			Fingerprint: ga.Fingerprint,
 			Summary:     cleanString(ga.Annotations["summary"]),
 			Description: cleanString(ga.Annotations["description"]),
 		})
 	}
 
-	// TODO: We should be capturing some sort of uniqueness key ("fingerprint"?)
-	// since the description may change due to it including metric values,
-	// and that probably shouldn't trigger a display refresh.
-
 	// Sort the alerts to try to get some vaguely canonical ordering.
+	// Alertmanager itself sorts by the fingerprint, which isn't useful for us.
 	sort.Slice(alerts, func(i, j int) bool {
 		ai, aj := alerts[i], alerts[j]
 		if ai.Summary != aj.Summary {
@@ -82,6 +86,7 @@ type gettableAlerts []*gettableAlert
 
 type gettableAlert struct {
 	Annotations map[string]string `json:"annotations"`
+	Fingerprint string            `json:"fingerprint"`
 
 	Status *struct {
 		State *string `json:"state"` // one of "unprocessed", "active", "suppressed"

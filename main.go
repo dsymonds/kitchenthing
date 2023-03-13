@@ -427,7 +427,7 @@ func (dd displayData) Equal(o displayData) bool {
 		return false
 	}
 	for i := range dd.alerts {
-		if dd.alerts[i] != o.alerts[i] {
+		if !dd.alerts[i].Same(o.alerts[i]) {
 			return false
 		}
 	}
