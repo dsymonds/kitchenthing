@@ -194,7 +194,7 @@ func (s *server) Write(p []byte) (n int, err error) {
 				b = nil
 				break
 			}
-			b = b[i:]
+			b = b[i+1:]
 		}
 		copy(s.logBuf.Bytes(), b)
 		s.logBuf.Truncate(len(b))
