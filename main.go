@@ -38,6 +38,8 @@ var (
 	debug      = flag.Bool("debug", false, "whether to log extra information")
 	httpFlag   = flag.String("http", "localhost:8080", "`address` on which to serve HTTP")
 
+	actOnMetadata = flag.Bool("act_on_metadata", false, "whether to act on metadata in task labels")
+
 	testRender  = flag.String("test_render", "", "`filename` to render a PNG to")
 	testTodoist = flag.Bool("test_todoist", false, "whether to use fake Todoist data")
 )
@@ -457,6 +459,7 @@ func (r *refresher) Refresh(ctx context.Context) displayData {
 		// Continue on and use any existing data.
 	}
 	dd.tasks = RenderableTasks(r.ts)
+	ApplyMetadata(ctx, r.ts, *actOnMetadata)
 
 	if r.cfg.Alertmanager != "" {
 		as, err := FetchAlerts(ctx, r.cfg.Alertmanager)

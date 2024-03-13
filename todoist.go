@@ -3,6 +3,9 @@ package main
 // Todoist integration.
 
 import (
+	"context"
+	"fmt"
+	"log"
 	"sort"
 	"strings"
 	"time"
@@ -110,4 +113,37 @@ func RenderableTasks(ts *todoist.Syncer) []renderableTask {
 	sort.Slice(res, func(i, j int) bool { return res[i].Compare(res[j]) < 0 })
 
 	return res
+}
+
+func ApplyMetadata(ctx context.Context, ts *todoist.Syncer, mutate bool) {
+	for _, item := range ts.Items {
+		for _, label := range item.Labels {
+			if strings.HasPrefix(label, "m:") {
+				if err := applyMetadata(ctx, ts, item, label, mutate); err != nil {
+					log.Printf("Applying metadata label %q to item %s (%q): %v", label, item.ID, item.Content, err)
+				}
+			}
+		}
+	}
+}
+
+func applyMetadata(ctx context.Context, ts *todoist.Syncer, item todoist.Item, label string, mutate bool) error {
+	switch label {
+	case "m:uf":
+		// Unassign if the item is due in the future (after today).
+		if item.Responsible == nil || item.Due.When() <= 0 {
+			return nil
+		}
+		if !mutate {
+			log.Printf("Would unassign %s (%q)...", item.ID, item.Content)
+			return nil
+		}
+		if err := ts.Assign(ctx, item, ""); err != nil {
+			return fmt.Errorf("unassigning: %w", err)
+		}
+		log.Printf("Unassigned %q", item.Content)
+		return nil
+	}
+
+	return nil
 }
