@@ -51,6 +51,28 @@ type Config struct {
 	PhotosDir       string        `yaml:"photos_dir"`
 
 	Alertmanager string `yaml:"alertmanager"`
+
+	// Messages are applied in a first-match order.
+	Messages []message `yaml:"messages"`
+}
+
+type message struct {
+	// One of these should normally be set.
+	// If none are set, this message matches all.
+	Eq *int `yaml:"eq"` // ==
+	Lt *int `yaml:"lt"` // <
+
+	Options []string `yaml:"options"`
+}
+
+func (m message) Matches(n int) bool {
+	if m.Eq != nil {
+		return n == *m.Eq
+	}
+	if m.Lt != nil {
+		return n < *m.Lt
+	}
+	return true
 }
 
 func main() {
@@ -330,6 +352,8 @@ type renderer struct {
 	tiny, small, normal, large, xlarge font.Face
 
 	photoPicker func() (string, error)
+
+	messages []message
 }
 
 func newRenderer(cfg Config, photoPicker func() (string, error)) (renderer, error) {
@@ -388,6 +412,8 @@ func newRenderer(cfg Config, photoPicker func() (string, error)) (renderer, erro
 		xlarge: xlarge,
 
 		photoPicker: photoPicker,
+
+		messages: cfg.Messages,
 	}, nil
 }
 
@@ -473,48 +499,16 @@ func (r *refresher) Refresh(ctx context.Context) displayData {
 	return dd
 }
 
-// Subtitle messages.
-var (
-	zeroMessages = []string{
-		"All done for today!",
-		"Everything got done!",
-		"Good job everyone!",
-	}
-	oneMessages = []string{
-		"Just one more thing:",
-		"mō ichido.",
-		"uno más!",
-	}
-	twoMessages = []string{
-		"A couple of tasks:",
-		"Two things to do:",
-	}
-	fewMessages = []string{
-		"A few things to do:",
-		"Only a handful:",
-	}
-	lotsMessages = []string{
-		"Quite a bit, eh?",
-		"Wowsa, that's a lot.",
-	}
-)
-
 func (r renderer) Render(dst draw.Image, data displayData) {
 	// Date in top-right corner.
 	dateBL := r.writeText(dst, image.Pt(-2, 2), topLeft, color.Black, r.xlarge, data.today.Format("Mon 2 Jan"))
 
 	var subtitles []string
-	switch n := len(data.tasks); {
-	case n == 0:
-		subtitles = zeroMessages
-	case n == 1:
-		subtitles = oneMessages
-	case n == 2:
-		subtitles = twoMessages
-	case n < 5:
-		subtitles = fewMessages
-	default:
-		subtitles = lotsMessages
+	for _, msg := range r.messages {
+		if msg.Matches(len(data.tasks)) {
+			subtitles = msg.Options
+			break
+		}
 	}
 	subtitle := subtitles[rand.Intn(len(subtitles))]
 	next := image.Pt(10, dateBL.Y)
