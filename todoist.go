@@ -131,17 +131,39 @@ func applyMetadata(ctx context.Context, ts *todoist.Syncer, item todoist.Item, l
 	switch label {
 	case "m:uf":
 		// Unassign if the item is due in the future (after today).
-		if item.Responsible == nil || item.Due.When() <= 0 {
+		if item.Due.When() <= 0 {
 			return nil
 		}
-		if !mutate {
-			log.Printf("Would unassign %s (%q)...", item.ID, item.Content)
-			return nil
+		if item.Responsible != nil {
+			if !mutate {
+				log.Printf("Would unassign %s (%q)...", item.ID, item.Content)
+			} else {
+				if err := ts.Assign(ctx, item, ""); err != nil {
+					return fmt.Errorf("unassigning: %w", err)
+				}
+				log.Printf("Unassigned %q", item.Content)
+			}
 		}
-		if err := ts.Assign(ctx, item, ""); err != nil {
-			return fmt.Errorf("unassigning: %w", err)
+
+		// Remove any "in-progress" label.
+		var labels []string
+		for _, label := range item.Labels {
+			if label != "in-progress" {
+				labels = append(labels, label)
+			}
 		}
-		log.Printf("Unassigned %q", item.Content)
+		if len(labels) != len(item.Labels) {
+			if !mutate {
+				log.Printf("Would change label set from %v to %v", item.Labels, labels)
+			} else {
+				err := ts.UpdateItem(ctx, item, todoist.ItemUpdates{Labels: &labels})
+				if err != nil {
+					return fmt.Errorf("removing labels: %w", err)
+				}
+				log.Printf("Changed label set from %v to %v", item.Labels, labels)
+			}
+		}
+
 		return nil
 	}
 

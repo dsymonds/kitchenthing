@@ -1,5 +1,5 @@
-github.com/dsymonds/todoist v0.0.0-20240313102859-4e6a86d3e25b h1:Im4LfJoIMewcJWaNJgpK90ASoUDnlitk4RbQa4k1FT8=
-github.com/dsymonds/todoist v0.0.0-20240313102859-4e6a86d3e25b/go.mod h1:RW+ZAdPjt9AZQr+UehqPRcZWsAb1+VnQpBkvku5OzB0=
+github.com/dsymonds/todoist v0.0.0-20240414040739-626fcaa95643 h1:5hWyWK3cOOQLKfFlO4jm/F8/LvUzHZXGnSqccZgvpWU=
+github.com/dsymonds/todoist v0.0.0-20240414040739-626fcaa95643/go.mod h1:RW+ZAdPjt9AZQr+UehqPRcZWsAb1+VnQpBkvku5OzB0=
 github.com/stianeikeland/go-rpio/v4 v4.6.0 h1:eAJgtw3jTtvn/CqwbC82ntcS+dtzUTgo5qlZKe677EY=
 github.com/stianeikeland/go-rpio/v4 v4.6.0/go.mod h1:A3GvHxC1Om5zaId+HqB3HKqx4K/AqeckxB7qRjxMK7o=
 golang.org/x/image v0.0.0-20220321031419-a8550c1d254a h1:LnH9RNcpPv5Kzi15lXg42lYMPUf0x8CuPv1YnvBWZAg=
