@@ -23,6 +23,7 @@ type renderableTask struct {
 
 	// Progress:
 	Done, Total int
+	InProgress  bool // the in-progress label
 }
 
 func (rt renderableTask) Compare(o renderableTask) int {
@@ -55,6 +56,12 @@ func (rt renderableTask) Compare(o renderableTask) int {
 	}
 	if rt.Done != o.Done {
 		return cmp(rt.Done, o.Done)
+	}
+	if rt.InProgress != o.InProgress {
+		if rt.InProgress {
+			return -1
+		}
+		return 1
 	}
 	return strings.Compare(rt.Assignee, o.Assignee)
 }
@@ -106,6 +113,11 @@ func RenderableTasks(ts *todoist.Syncer) []renderableTask {
 		}
 		if t, ok := task.Due.Time(); ok {
 			rt.Time = t
+		}
+		for _, label := range task.Labels {
+			if label == "in-progress" {
+				rt.InProgress = true
+			}
 		}
 		res = append(res, rt)
 	}

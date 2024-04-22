@@ -471,10 +471,10 @@ func (r *refresher) Refresh(ctx context.Context) displayData {
 		t0 := time.Time{}
 		tset := dd.today.Add(17*time.Hour + 30*time.Minute) // 5:30pm
 		dd.tasks = []renderableTask{
-			{4, t0, "something really important", false, "David", "House", 1, 3},
-			{3, tset, "something important", true, "", "House", 0, 0},
-			{2, t0, "something nice to do", false, "", "Other", 0, 0},
-			{1, t0, "if there's time", false, "", "Other", 0, 4},
+			{4, t0, "something really important", false, "David", "House", 1, 3, false},
+			{3, tset, "something important", true, "", "House", 0, 0, true},
+			{2, t0, "something nice to do", false, "", "Other", 0, 0, false},
+			{1, t0, "if there's time", false, "", "Other", 0, 4, false},
 		}
 		return dd
 	}
@@ -524,6 +524,9 @@ func (r renderer) Render(dst draw.Image, data displayData) {
 		}
 		if task.HasDesc {
 			txt += " ♫"
+		}
+		if task.InProgress {
+			txt += " ◊"
 		}
 		if !task.Time.IsZero() {
 			txt += " <" + task.Time.Format(time.Kitchen) + ">"
