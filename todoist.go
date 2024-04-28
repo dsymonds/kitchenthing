@@ -177,6 +177,27 @@ func applyMetadata(ctx context.Context, ts *todoist.Syncer, item todoist.Item, l
 		}
 
 		return nil
+	case "m:dd":
+		// If there's any other tasks with the same title, and a lower ID,
+		// complete this task automatically.
+		matched := false
+		for _, other := range ts.Items {
+			if other.Content == item.Content && other.ID < item.ID {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return nil
+		}
+		if !mutate {
+			log.Printf("Would delete %s (%q)...", item.ID, item.Content)
+			return nil
+		}
+		if err := ts.DeleteItem(ctx, item); err != nil {
+			return fmt.Errorf("deleting item: %w", err)
+		}
+		log.Printf("Deleted duplicate item %s (%q)...", item.ID, item.Content)
 	}
 
 	return nil
