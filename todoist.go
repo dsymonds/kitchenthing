@@ -24,6 +24,7 @@ type renderableTask struct {
 	// Progress:
 	Done, Total int
 	InProgress  bool // the in-progress label
+	PowerHungry bool // the power-hungry label
 }
 
 func (rt renderableTask) Compare(o renderableTask) int {
@@ -58,10 +59,10 @@ func (rt renderableTask) Compare(o renderableTask) int {
 		return cmp(rt.Done, o.Done)
 	}
 	if rt.InProgress != o.InProgress {
-		if rt.InProgress {
-			return -1
-		}
-		return 1
+		return boolCompare(rt.InProgress, o.InProgress)
+	}
+	if rt.PowerHungry != o.PowerHungry {
+		return boolCompare(rt.PowerHungry, o.PowerHungry)
 	}
 	return strings.Compare(rt.Assignee, o.Assignee)
 }
@@ -71,6 +72,15 @@ func cmp(x, y int) int {
 		return -1
 	}
 	return 1
+}
+
+func boolCompare(a, b bool) int { // sorts true first
+	if a && !b {
+		return -1
+	} else if !a && b {
+		return 1
+	}
+	return 0
 }
 
 func timeCompare(a, b time.Time) int {
@@ -115,8 +125,11 @@ func RenderableTasks(ts *todoist.Syncer) []renderableTask {
 			rt.Time = t
 		}
 		for _, label := range task.Labels {
-			if label == "in-progress" {
+			switch label {
+			case "in-progress":
 				rt.InProgress = true
+			case "power-hungry":
+				rt.PowerHungry = true
 			}
 		}
 		res = append(res, rt)

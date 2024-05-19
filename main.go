@@ -51,6 +51,7 @@ type Config struct {
 	PhotosDir       string        `yaml:"photos_dir"`
 
 	Alertmanager string `yaml:"alertmanager"`
+	MQTT         string `yaml:"mqtt"`
 
 	// Messages are applied in a first-match order.
 	Messages []message `yaml:"messages"`
@@ -163,6 +164,11 @@ func main() {
 		httpServer.Shutdown(context.Background())
 	}()
 
+	mqtt, err := NewMQTT(cfg)
+	if err != nil {
+		log.Fatalf("MQTT: %v", err)
+	}
+
 	if err := p.Start(); err != nil {
 		log.Fatalf("Paper start: %v", err)
 	}
@@ -180,7 +186,7 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := loop(ctx, cfg, rend, ref, p); err != nil {
+		if err := loop(ctx, cfg, rend, ref, p, mqtt); err != nil {
 			log.Printf("Loop failed: %v", err)
 		}
 		cancel()
@@ -324,13 +330,20 @@ func (s *server) serveSetNextPhoto(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
-func loop(ctx context.Context, cfg Config, rend renderer, ref *refresher, p paper) error {
+func loop(ctx context.Context, cfg Config, rend renderer, ref *refresher, p paper, mqtt *MQTT) error {
 	var prev displayData
 	for {
 		data := ref.Refresh(ctx)
 
 		if !data.Equal(prev) {
 			log.Printf("New data to be displayed; refreshing now")
+
+			if mqtt != nil {
+				if err := mqtt.PublishUpdate(data.tasks); err != nil {
+					log.Printf("MQTT publish: %v", err)
+				}
+			}
+
 			p.Init()
 			rend.Render(p, data)
 			p.DisplayRefresh()
@@ -471,10 +484,10 @@ func (r *refresher) Refresh(ctx context.Context) displayData {
 		t0 := time.Time{}
 		tset := dd.today.Add(17*time.Hour + 30*time.Minute) // 5:30pm
 		dd.tasks = []renderableTask{
-			{4, t0, "something really important", false, "David", "House", 1, 3, false},
-			{3, tset, "something important", true, "", "House", 0, 0, true},
-			{2, t0, "something nice to do", false, "", "Other", 0, 0, false},
-			{1, t0, "if there's time", false, "", "Other", 0, 4, false},
+			{Priority: 4, Time: t0, Title: "something really important", Assignee: "David", Project: "House", Done: 1, Total: 3},
+			{Priority: 3, Time: tset, Title: "something important", HasDesc: true, Project: "House", InProgress: true},
+			{Priority: 2, Time: t0, Title: "something nice to do", Project: "Other"},
+			{Priority: 1, Time: t0, Title: "if there's time", Project: "Other", Done: 0, Total: 4},
 		}
 		return dd
 	}
