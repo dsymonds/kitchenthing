@@ -191,11 +191,11 @@ func applyMetadata(ctx context.Context, ts *todoist.Syncer, item todoist.Item, l
 
 		return nil
 	case "m:dd":
-		// If there's any other tasks with the same title, and a lower ID,
+		// If there's any other tasks with the same title in the same project, and a lower ID,
 		// complete this task automatically.
 		matched := false
 		for _, other := range ts.Items {
-			if other.Content == item.Content && other.ID < item.ID {
+			if other.Content == item.Content && other.ProjectID == item.ProjectID && other.ID < item.ID {
 				matched = true
 				break
 			}
