@@ -82,18 +82,26 @@ func (m message) Matches(n int) bool {
 	return true
 }
 
+func parseConfig(filename string) (Config, error) {
+	raw, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return Config{}, fmt.Errorf("reading config file %s: %v", filename, err)
+	}
+	var cfg Config
+	if err := yaml.UnmarshalStrict(raw, &cfg); err != nil {
+		return Config{}, fmt.Errorf("parsing config from %s: %v", filename, err)
+	}
+	return cfg, nil
+}
+
 func main() {
 	flag.Parse()
 
 	rand.Seed(time.Now().UnixNano())
 
-	var cfg Config
-	cfgRaw, err := ioutil.ReadFile(*configFile)
+	cfg, err := parseConfig(*configFile)
 	if err != nil {
-		log.Fatalf("Reading config file %s: %v", *configFile, err)
-	}
-	if err := yaml.UnmarshalStrict(cfgRaw, &cfg); err != nil {
-		log.Fatalf("Parsing config from %s: %v", *configFile, err)
+		log.Fatal(err)
 	}
 
 	s := &server{
