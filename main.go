@@ -22,6 +22,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -52,6 +53,11 @@ type Config struct {
 
 	Alertmanager string `yaml:"alertmanager"`
 	MQTT         string `yaml:"mqtt"`
+
+	Orderings []struct {
+		Project  string   `yaml:"project"`
+		Patterns []string `yaml:"patterns"`
+	} `yaml:"orderings"`
 
 	// Messages are applied in a first-match order.
 	Messages []message `yaml:"messages"`
@@ -100,7 +106,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("newRenderer: %v", err)
 	}
-	ref := newRefresher(cfg)
+	ref, err := newRefresher(cfg)
+	if err != nil {
+		log.Fatalf("newRefresher: %v", err)
+	}
 
 	if *testRender != "" {
 		ctx, _ := context.WithTimeout(context.Background(), 30*time.Second)
@@ -433,13 +442,27 @@ func newRenderer(cfg Config, photoPicker func() (string, error)) (renderer, erro
 type refresher struct {
 	cfg Config
 	ts  *todoist.Syncer
+
+	reorderers map[string]*Reorderer
 }
 
-func newRefresher(cfg Config) *refresher {
-	return &refresher{
+func newRefresher(cfg Config) (*refresher, error) {
+	r := &refresher{
 		cfg: cfg,
 		ts:  todoist.NewSyncer(cfg.TodoistAPIToken),
+
+		reorderers: make(map[string]*Reorderer),
 	}
+	for _, o := range cfg.Orderings {
+		ro, err := NewReorderer(o.Patterns)
+		if err != nil {
+			return nil, fmt.Errorf("creating Reorderer for project %q: %w", o.Project, err)
+		}
+		r.reorderers[o.Project] = ro
+		log.Printf("Prepared reorderer for project %q with %d patterns", o.Project, len(o.Patterns))
+	}
+
+	return r, nil
 }
 
 type displayData struct {
@@ -499,6 +522,7 @@ func (r *refresher) Refresh(ctx context.Context) displayData {
 	}
 	dd.tasks = RenderableTasks(r.ts)
 	ApplyMetadata(ctx, r.ts, *actOnMetadata)
+	r.reorder(ctx)
 
 	if r.cfg.Alertmanager != "" {
 		as, err := FetchAlerts(ctx, r.cfg.Alertmanager)
@@ -510,6 +534,48 @@ func (r *refresher) Refresh(ctx context.Context) displayData {
 	}
 
 	return dd
+}
+
+func (r *refresher) reorder(ctx context.Context) {
+	type oi struct { // ordered item
+		ID         string
+		Content    string
+		ChildOrder int // current child_order
+	}
+
+	for project, ro := range r.reorderers {
+		var items []oi
+		for _, item := range r.ts.Items {
+			if r.ts.Projects[item.ProjectID].Name != project {
+				continue
+			}
+			if item.ParentID != "" {
+				continue
+			}
+			items = append(items, oi{item.ID, item.Content, item.ChildOrder})
+		}
+		// First put them in their current order.
+		sort.SliceStable(items, func(i, j int) bool { return items[i].ChildOrder < items[j].ChildOrder })
+		// Figure out the desired arrangement.
+		ns := ro.Arrange(len(items), func(i int) string { return items[i].Content })
+		// Are any changes required?
+		changes := false
+		var ids []string // new order of item IDs
+		for i, x := range ns {
+			if i != x {
+				changes = true
+			}
+			ids = append(ids, items[x].ID)
+		}
+		if !changes {
+			continue
+		}
+		if err := r.ts.Reorder(ctx, ids); err != nil {
+			log.Printf("Reordering project %q: %v", project, err)
+			continue
+		}
+		log.Printf("Reordered project %q!", project)
+	}
 }
 
 func (r renderer) Render(dst draw.Image, data displayData) {
