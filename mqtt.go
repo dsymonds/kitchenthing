@@ -114,7 +114,7 @@ func (m *MQTT) PublishUpdate(tasks []renderableTask) error {
 		}
 	}
 
-	log.Printf("Publishing %d to MQTT %s", phpc, mqttUpdateTopic)
+	//log.Printf("Publishing %d to MQTT %s", phpc, mqttUpdateTopic)
 	_, err := m.cm.Publish(ctx, &paho.Publish{
 		QoS:     0, // at most once
 		Retain:  true,
