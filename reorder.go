@@ -26,9 +26,17 @@ func NewReorderer(patterns []string) (*Reorderer, error) {
 	return r, nil
 }
 
+type Arrangement struct {
+	// New is the new ordering of the indexes provided to Arrange.
+	New []int
+	// NumUnknown is the number of indexes at the tail of New
+	// that did not match any of the reorderer's patterns.
+	NumUnknown int
+}
+
 // Arrange reorders a slice of the given length, with text retrieved using the given function.
 // It returns an ordered list of the original indexes.
-func (r *Reorderer) Arrange(n int, text func(int) string) []int {
+func (r *Reorderer) Arrange(n int, text func(int) string) Arrangement {
 	// Transform inputs into indexes into r.patterns.
 	// Take the first match, and record -1 as a non-match.
 	type indexPair struct {
@@ -62,9 +70,12 @@ func (r *Reorderer) Arrange(n int, text func(int) string) []int {
 		return pairs[i].orig < pairs[j].orig
 	})
 
-	var out []int
+	var arr Arrangement
 	for _, p := range pairs {
-		out = append(out, p.orig)
+		arr.New = append(arr.New, p.orig)
+		if p.pati < 0 {
+			arr.NumUnknown++
+		}
 	}
-	return out
+	return arr
 }

@@ -181,7 +181,7 @@ func applyMetadata(ctx context.Context, ts *todoist.Syncer, item todoist.Item, l
 			if !mutate {
 				log.Printf("Would change label set from %v to %v", item.Labels, labels)
 			} else {
-				err := ts.UpdateItem(ctx, item, todoist.ItemUpdates{Labels: &labels})
+				err := ts.UpdateItem(ctx, item.ID, todoist.ItemUpdates{Labels: &labels})
 				if err != nil {
 					return fmt.Errorf("removing labels: %w", err)
 				}
@@ -207,7 +207,7 @@ func applyMetadata(ctx context.Context, ts *todoist.Syncer, item todoist.Item, l
 			log.Printf("Would delete %s (%q)...", item.ID, item.Content)
 			return nil
 		}
-		if err := ts.DeleteItem(ctx, item); err != nil {
+		if err := ts.DeleteItem(ctx, item.ID); err != nil {
 			return fmt.Errorf("deleting item: %w", err)
 		}
 		log.Printf("Deleted duplicate item %s (%q)...", item.ID, item.Content)

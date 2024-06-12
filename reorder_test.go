@@ -19,15 +19,15 @@ func TestReorder(t *testing.T) {
 	}
 	tests := []struct {
 		in   []string
-		want []int
+		want Arrangement
 	}{
 		// Simple cases.
-		{[]string{"apple", "banana", "rye bread"}, []int{0, 1, 2}},
-		{[]string{"ice cream", "apples", "bananas"}, []int{1, 2, 0}},
+		{[]string{"apple", "banana", "rye bread"}, Arrangement{New: []int{0, 1, 2}, NumUnknown: 0}},
+		{[]string{"ice cream", "apples", "bananas"}, Arrangement{New: []int{1, 2, 0}, NumUnknown: 0}},
 		// Double matches.
-		{[]string{"apple", "apple2", "apple3"}, []int{0, 1, 2}},
+		{[]string{"apple", "apple2", "apple3"}, Arrangement{New: []int{0, 1, 2}, NumUnknown: 0}},
 		// Unmatched elements should end up last.
-		{[]string{"apples", "wraps", "ice cream"}, []int{0, 2, 1}},
+		{[]string{"pavlova", "apples", "wraps", "ice cream"}, Arrangement{New: []int{1, 3, 0, 2}, NumUnknown: 2}},
 	}
 	for _, test := range tests {
 		got := r.Arrange(len(test.in), func(i int) string { return test.in[i] })

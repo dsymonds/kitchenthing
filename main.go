@@ -548,6 +548,7 @@ func (r *refresher) reorder(ctx context.Context) {
 	type oi struct { // ordered item
 		ID         string
 		Content    string
+		Labels     []string
 		ChildOrder int // current child_order
 	}
 
@@ -560,16 +561,49 @@ func (r *refresher) reorder(ctx context.Context) {
 			if item.ParentID != "" {
 				continue
 			}
-			items = append(items, oi{item.ID, item.Content, item.ChildOrder})
+			items = append(items, oi{item.ID, item.Content, item.Labels, item.ChildOrder})
 		}
 		// First put them in their current order.
 		sort.SliceStable(items, func(i, j int) bool { return items[i].ChildOrder < items[j].ChildOrder })
 		// Figure out the desired arrangement.
-		ns := ro.Arrange(len(items), func(i int) string { return items[i].Content })
+		arr := ro.Arrange(len(items), func(i int) string { return items[i].Content })
+		// Any label adjustments to make?
+		const mLabel = "m:unk"
+		for i, x := range arr.New {
+			item := items[x]
+			have := i >= len(arr.New)-arr.NumUnknown // should this item have the "m:unk" label?
+			seen := false                            // whether have is true and we've seen it
+			update := false                          // whether to update the item
+			for i := 0; i < len(item.Labels); {
+				if item.Labels[i] == mLabel {
+					if !have {
+						copy(item.Labels[i:], item.Labels[i+1:])
+						item.Labels = item.Labels[:len(item.Labels)-1]
+						update = true
+						continue
+					}
+					seen = true
+				}
+				i++
+			}
+			if have && !seen {
+				item.Labels = append(item.Labels, mLabel)
+				update = true
+			}
+			if !update {
+				continue
+			}
+			if err := r.ts.UpdateItem(ctx, item.ID, todoist.ItemUpdates{Labels: &item.Labels}); err != nil {
+				log.Printf("UpdateItem: %v", err)
+				continue
+			}
+			log.Printf("Updated %q to this label set: %q", item.Content, item.Labels)
+		}
+		// TODO: Do something with arr.NumUnknown.
 		// Are any changes required?
 		changes := false
 		var ids []string // new order of item IDs
-		for i, x := range ns {
+		for i, x := range arr.New {
 			if i != x {
 				changes = true
 			}

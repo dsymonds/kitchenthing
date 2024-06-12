@@ -5,7 +5,7 @@ go 1.21
 toolchain go1.22.3
 
 require (
-	github.com/dsymonds/todoist v0.0.0-20240609062202-ab7d61f171da
+	github.com/dsymonds/todoist v0.0.0-20240612231146-44f049276347
 	github.com/eclipse/paho.golang v0.21.0
 	github.com/stianeikeland/go-rpio/v4 v4.6.0
 	golang.org/x/image v0.0.0-20220321031419-a8550c1d254a
