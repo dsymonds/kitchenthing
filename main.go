@@ -55,8 +55,8 @@ type Config struct {
 	MQTT         string `yaml:"mqtt"`
 
 	Orderings []struct {
-		Project  string   `yaml:"project"`
-		Patterns []string `yaml:"patterns"`
+		Project string          `yaml:"project"`
+		Groups  []GroupPatterns `yaml:"groups"`
 	} `yaml:"orderings"`
 
 	// Messages are applied in a first-match order.
@@ -462,12 +462,12 @@ func newRefresher(cfg Config) (*refresher, error) {
 		reorderers: make(map[string]*Reorderer),
 	}
 	for _, o := range cfg.Orderings {
-		ro, err := NewReorderer(o.Patterns)
+		ro, err := NewReorderer(o.Groups)
 		if err != nil {
 			return nil, fmt.Errorf("creating Reorderer for project %q: %w", o.Project, err)
 		}
 		r.reorderers[o.Project] = ro
-		log.Printf("Prepared reorderer for project %q with %d patterns", o.Project, len(o.Patterns))
+		log.Printf("Prepared reorderer for project %q with %d groups", o.Project, len(o.Groups))
 	}
 
 	return r, nil
@@ -568,26 +568,31 @@ func (r *refresher) reorder(ctx context.Context) {
 		// Figure out the desired arrangement.
 		arr := ro.Arrange(len(items), func(i int) string { return items[i].Content })
 		// Any label adjustments to make?
-		const mLabel = "m:unk"
 		for i, x := range arr.New {
 			item := items[x]
-			have := i >= len(arr.New)-arr.NumUnknown // should this item have the "m:unk" label?
-			seen := false                            // whether have is true and we've seen it
-			update := false                          // whether to update the item
+			want := "" // what s: label should this item have?
+			if i < len(arr.Groups) {
+				want = "s:" + arr.Groups[i]
+			}
+			seen := false   // whether want!="" and we've seen it
+			update := false // whether to update the item
 			for i := 0; i < len(item.Labels); {
-				if item.Labels[i] == mLabel {
-					if !have {
-						copy(item.Labels[i:], item.Labels[i+1:])
-						item.Labels = item.Labels[:len(item.Labels)-1]
-						update = true
-						continue
-					}
-					seen = true
+				label := item.Labels[i]
+				if !strings.HasPrefix(label, "s:") {
+					i++
+					continue // not ours to touch
 				}
+				if label != want {
+					copy(item.Labels[i:], item.Labels[i+1:])
+					item.Labels = item.Labels[:len(item.Labels)-1]
+					update = true
+					continue
+				}
+				seen = true
 				i++
 			}
-			if have && !seen {
-				item.Labels = append(item.Labels, mLabel)
+			if want != "" && !seen {
+				item.Labels = append(item.Labels, want)
 				update = true
 			}
 			if !update {
@@ -599,7 +604,6 @@ func (r *refresher) reorder(ctx context.Context) {
 			}
 			log.Printf("Updated %q to this label set: %q", item.Content, item.Labels)
 		}
-		// TODO: Do something with arr.NumUnknown.
 		// Are any changes required?
 		changes := false
 		var ids []string // new order of item IDs

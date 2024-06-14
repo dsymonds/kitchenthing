@@ -6,22 +6,34 @@ import (
 	"sort"
 )
 
-type Reorderer struct {
-	patterns []*regexp.Regexp
+type GroupPatterns struct {
+	Name     string   `yaml:"name"`
+	Patterns []string `yaml:"patterns"`
 }
 
-func NewReorderer(patterns []string) (*Reorderer, error) {
-	r := &Reorderer{}
-	for _, pat := range patterns {
-		// Make patterns case insensitive by default,
-		// and anchor the match.
-		pat = "(?i)^" + pat + "$"
+type Reorderer struct {
+	patterns []match
+}
 
-		rx, err := regexp.Compile(pat)
-		if err != nil {
-			return nil, fmt.Errorf("bad pattern /%s/: %w", pat, err)
+type match struct {
+	rx    *regexp.Regexp
+	group string
+}
+
+func NewReorderer(groups []GroupPatterns) (*Reorderer, error) {
+	r := &Reorderer{}
+	for _, gp := range groups {
+		for _, pat := range gp.Patterns {
+			// Make patterns case insensitive by default,
+			// and anchor the match.
+			pat = "(?i)^" + pat + "$"
+
+			rx, err := regexp.Compile(pat)
+			if err != nil {
+				return nil, fmt.Errorf("bad pattern /%s/: %w", pat, err)
+			}
+			r.patterns = append(r.patterns, match{rx: rx, group: gp.Name})
 		}
-		r.patterns = append(r.patterns, rx)
 	}
 	return r, nil
 }
@@ -29,9 +41,10 @@ func NewReorderer(patterns []string) (*Reorderer, error) {
 type Arrangement struct {
 	// New is the new ordering of the indexes provided to Arrange.
 	New []int
-	// NumUnknown is the number of indexes at the tail of New
-	// that did not match any of the reorderer's patterns.
-	NumUnknown int
+	// Groups is the groups that each element belongs to.
+	// When this is shorter than New, the tail end of that slice
+	// are the elements that did not match any of the reorderer's patterns.
+	Groups []string
 }
 
 // Arrange reorders a slice of the given length, with text retrieved using the given function.
@@ -47,8 +60,8 @@ func (r *Reorderer) Arrange(n int, text func(int) string) Arrangement {
 	for i := 0; i < n; i++ {
 		s := text(i)
 		pati := -1
-		for j, rx := range r.patterns {
-			if rx.MatchString(s) {
+		for j, m := range r.patterns {
+			if m.rx.MatchString(s) {
 				pati = j
 				break
 			}
@@ -73,8 +86,8 @@ func (r *Reorderer) Arrange(n int, text func(int) string) Arrangement {
 	var arr Arrangement
 	for _, p := range pairs {
 		arr.New = append(arr.New, p.orig)
-		if p.pati < 0 {
-			arr.NumUnknown++
+		if p.pati >= 0 {
+			arr.Groups = append(arr.Groups, r.patterns[p.pati].group)
 		}
 	}
 	return arr

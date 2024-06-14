@@ -12,7 +12,7 @@ func TestConfigParses(t *testing.T) {
 
 	// Check that we can construct reorderers.
 	for _, o := range cfg.Orderings {
-		_, err := NewReorderer(o.Patterns)
+		_, err := NewReorderer(o.Groups)
 		if err != nil {
 			t.Errorf("Creating Reorderer for project %q based on config: %v", o.Project, err)
 		}
