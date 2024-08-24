@@ -75,6 +75,7 @@ func cleanString(s string) string {
 
 	// Our chosen font doesn't support a lot of glyphs.
 	s = strings.Replace(s, "℃", "°C", -1)
+	s = strings.Replace(s, "CO₂", "CO2", -1)
 
 	return s
 }
