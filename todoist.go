@@ -156,7 +156,7 @@ func applyMetadata(ctx context.Context, ts *todoist.Syncer, item todoist.Item, l
 	switch label {
 	case "m:uf":
 		// Unassign if the item is due in the future (after today).
-		if item.Due.When() <= 0 {
+		if item.Due == nil || item.Due.When() <= 0 {
 			return nil
 		}
 		if item.Responsible != nil {
