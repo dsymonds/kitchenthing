@@ -626,7 +626,7 @@ func (r *refresher) reorder(ctx context.Context) {
 
 func (r renderer) Render(dst draw.Image, data displayData) {
 	// Date in top-right corner.
-	dateBL := r.writeText(dst, image.Pt(-2, 2), topLeft, color.Black, r.xlarge, data.today.Format("Mon 2 Jan"))
+	dateBL := r.writeText(dst, image.Pt(-2, 2), topRight, color.Black, r.xlarge, data.today.Format("Mon 2 Jan"))
 
 	var subtitles []string
 	for _, msg := range r.messages {
@@ -688,7 +688,7 @@ func (r renderer) Render(dst draw.Image, data displayData) {
 	}
 
 	if len(data.alerts) == 0 {
-		r.writeText(dst, image.Pt(-2, -2), bottomLeft, color.Black, r.tiny, "π")
+		r.writeText(dst, image.Pt(-2, -2), bottomRight, color.Black, r.tiny, "π")
 	}
 
 	sub := clippedImage{
@@ -714,13 +714,21 @@ type originAnchor int
 
 const (
 	topLeft originAnchor = iota
+	topRight
 	bottomLeft
+	bottomRight
 )
 
 // writeText renders some text at the origin.
 // If either component of origin is negative, it is interpreted as being relative to the right/bottom.
+// The text is written such that the origin is at the given anchor corner of the text.
 // It returns the opposite corner.
 func (r renderer) writeText(dst draw.Image, origin image.Point, anchor originAnchor, col color.Color, face font.Face, text string) (opposite image.Point) {
+	defer func() {
+		if *debug {
+			log.Printf("writeText(origin=%v, text=%q) -> %v", origin, text, opposite)
+		}
+	}()
 	// TODO: fix this to work in case dst's bounds is not (0, 0).
 	// TODO: It'd be nice to log a message if the text busts the bounds of dst.
 
@@ -741,28 +749,49 @@ func (r renderer) writeText(dst draw.Image, origin image.Point, anchor originAnc
 	dstSize := dst.Bounds().Size()
 	lowerRight := fixed.P(dstSize.X-1, dstSize.Y-1)
 
-	// d.Dot needs to end up at the bottom left.
+	// Compute where the root of the text should go (d.Dot), which should be the bottom left.
+	// d.Dot needs to end up at the bottom left, since that's what DrawString orients around.
+	// We need to translate based on origin and anchor.
 	if origin.X >= 0 {
 		// Relative to left side.
 		d.Dot.X = fixed.I(origin.X)
 	} else {
 		// Relative to right side.
-		d.Dot.X = lowerRight.X - boundsWidth - fixed.I(-origin.X)
+		d.Dot.X = lowerRight.X - fixed.I(-origin.X)
 	}
 	if origin.Y >= 0 {
 		// Relative to top.
 		d.Dot.Y = fixed.I(origin.Y)
-		if anchor == topLeft {
-			d.Dot.Y += boundsHeight
-		}
 	} else {
 		// Relative to bottom.
 		d.Dot.Y = lowerRight.Y - fixed.I(-origin.Y)
 	}
+	switch anchor {
+	case topLeft:
+		d.Dot.Y += boundsHeight
+	case topRight:
+		d.Dot.X -= boundsWidth
+		d.Dot.Y += boundsHeight
+	case bottomLeft:
+		// correct already
+	case bottomRight:
+		d.Dot.X -= boundsWidth
+	}
 
 	d.DrawString(text)
 
-	if anchor == bottomLeft {
+	// d.Dot is now at the bottom right corner.
+	// Adjust what we return so we always give back the corner
+	// opposite of the provided anchor.
+	switch anchor {
+	case topLeft: // return bottom right
+		// correct already
+	case topRight: // return bottom left
+		d.Dot.X -= boundsWidth
+	case bottomLeft: // return top right
+		d.Dot.Y -= boundsHeight
+	case bottomRight: // return top left
+		d.Dot.X -= boundsWidth
 		d.Dot.Y -= boundsHeight
 	}
 
