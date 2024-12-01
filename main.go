@@ -626,7 +626,14 @@ func (r *refresher) reorder(ctx context.Context) {
 
 func (r renderer) Render(dst draw.Image, data displayData) {
 	// Date in top-right corner.
-	dateBL := r.writeText(dst, image.Pt(-2, 2), topRight, color.Black, r.xlarge, data.today.Format("Mon 2 Jan"))
+	// Put date number in red for December
+	var domCol color.Color = color.Black
+	if data.today.Month() == time.December {
+		domCol = colorRed
+	}
+	monBL := r.writeText(dst, image.Pt(-2, 2), topRight, color.Black, r.xlarge, data.today.Format(" Jan"))
+	domBL := r.writeText(dst, image.Pt(monBL.X, 2), topRight, domCol, r.xlarge, data.today.Format(" 2"))
+	dateBL := r.writeText(dst, image.Pt(domBL.X, 2), topRight, color.Black, r.xlarge, data.today.Format("Mon"))
 
 	var subtitles []string
 	for _, msg := range r.messages {
