@@ -17,7 +17,8 @@ type renderableTask struct {
 	Priority int       // 4, 3, 2, 1
 	Time     time.Time // to the minute; only set for tasks with times
 	Title    string
-	HasDesc  bool   // whether there's a description
+	HasDesc  bool // whether there's a description
+	Overdue  bool
 	Assignee string // may be empty
 	Project  string
 
@@ -51,6 +52,9 @@ func (rt renderableTask) Compare(o renderableTask) int {
 			return -1
 		}
 		return 1
+	}
+	if rt.Overdue != o.Overdue {
+		return boolCompare(rt.Overdue, o.Overdue)
 	}
 	if rt.Total != o.Total {
 		return cmp(rt.Total, o.Total)
@@ -109,6 +113,7 @@ func RenderableTasks(ts *todoist.Syncer) []renderableTask {
 			Priority: task.Priority,
 			Title:    task.Content,
 			HasDesc:  task.Description != "",
+			Overdue:  task.Due.When() < 0,
 			Project:  proj.Name,
 
 			Done:  task.ChildCompleted,

@@ -517,7 +517,7 @@ func (r *refresher) Refresh(ctx context.Context) displayData {
 		dd.tasks = []renderableTask{
 			{Priority: 4, Time: t0, Title: "something really important", Assignee: "David", Project: "House", Done: 1, Total: 3},
 			{Priority: 3, Time: tset, Title: "something important", HasDesc: true, Project: "House", InProgress: true},
-			{Priority: 2, Time: t0, Title: "something nice to do", Project: "Other"},
+			{Priority: 2, Time: t0, Title: "something nice to do", Overdue: true, Project: "Other"},
 			{Priority: 1, Time: t0, Title: "if there's time", Project: "Other", Done: 0, Total: 4},
 		}
 		return dd
@@ -650,7 +650,25 @@ func (r renderer) Render(dst draw.Image, data displayData) {
 	listVPitch := r.normal.Metrics().Height.Ceil()
 	listBase := image.Pt(10, next.Y+2+listVPitch) // baseline of each list entry
 	for i, task := range data.tasks {             // TODO: adjust font size for task count?
+		baselineY := listBase.Y + i*listVPitch
+		origin := image.Pt(listBase.X, baselineY)
+
+		var titleCol color.Color = color.Black
+		if task.Overdue {
+			titleCol = colorRed
+		}
+
 		txt := fmt.Sprintf("[P%d] %s", 4-task.Priority, task.Title)
+		// Priority
+		next := r.writeText(dst, origin, bottomLeft, color.Black, r.normal, fmt.Sprintf("[P%d] ", 4-task.Priority))
+		origin = image.Pt(next.X, baselineY)
+
+		// Title
+		next = r.writeText(dst, origin, bottomLeft, titleCol, r.normal, task.Title)
+		origin = image.Pt(next.X, baselineY)
+
+		// Remaining info
+		txt = ""
 		if task.Total > 0 {
 			txt += fmt.Sprintf(" {%d/%d}", task.Done, task.Total)
 		}
@@ -666,10 +684,7 @@ func (r renderer) Render(dst draw.Image, data displayData) {
 		if task.Assignee != "" {
 			txt += " (" + task.Assignee + ")"
 		}
-		// TODO: red for overdue?
-		baselineY := listBase.Y + i*listVPitch
-		origin := image.Pt(listBase.X, baselineY)
-		next := r.writeText(dst, origin, bottomLeft, color.Black, r.normal, txt)
+		next = r.writeText(dst, origin, bottomLeft, color.Black, r.normal, txt)
 		origin = image.Pt(next.X+10, baselineY)
 		r.writeText(dst, origin, bottomLeft, colorRed, r.small, task.Project)
 	}
