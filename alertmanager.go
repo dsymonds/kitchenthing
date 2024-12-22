@@ -88,8 +88,16 @@ type gettableAlerts []*gettableAlert
 type gettableAlert struct {
 	Annotations map[string]string `json:"annotations"`
 	Fingerprint string            `json:"fingerprint"`
+	Labels      map[string]string `json:"labels"`
 
 	Status *struct {
 		State *string `json:"state"` // one of "unprocessed", "active", "suppressed"
 	} `json:"status"`
+}
+
+func (g *gettableAlert) State() string {
+	if g.Status != nil && g.Status.State != nil {
+		return *g.Status.State
+	}
+	return "???"
 }
