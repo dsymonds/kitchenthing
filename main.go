@@ -626,9 +626,10 @@ func (r *refresher) reorder(ctx context.Context) {
 
 func (r renderer) Render(dst draw.Image, data displayData) {
 	// Date in top-right corner.
-	// Put date number in red for December
+	// Put date number in red for December, before day 25.
 	var domCol color.Color = color.Black
-	if data.today.Month() == time.December {
+	_, mon, day := data.today.Date()
+	if mon == time.December && day <= 25 {
 		domCol = colorRed
 	}
 	monBL := r.writeText(dst, image.Pt(-2, 2), topRight, color.Black, r.xlarge, data.today.Format(" Jan"))
