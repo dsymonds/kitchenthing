@@ -101,3 +101,5 @@ func (g *gettableAlert) State() string {
 	}
 	return "???"
 }
+
+func (g *gettableAlert) Silenced() bool { return g.State() == "suppressed" }
