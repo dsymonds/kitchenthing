@@ -742,6 +742,21 @@ const (
 	bottomRight
 )
 
+func (oa originAnchor) String() string {
+	switch oa {
+	case topLeft:
+		return "TL"
+	case topRight:
+		return "TR"
+	case bottomLeft:
+		return "BL"
+	case bottomRight:
+		return "BR"
+	default:
+		return "???"
+	}
+}
+
 // writeText renders some text at the origin.
 // If either component of origin is negative, it is interpreted as being relative to the right/bottom.
 // The text is written such that the origin is at the given anchor corner of the text.
@@ -749,7 +764,7 @@ const (
 func (r renderer) writeText(dst draw.Image, origin image.Point, anchor originAnchor, col color.Color, face font.Face, text string) (opposite image.Point) {
 	defer func() {
 		if *debug {
-			log.Printf("writeText(origin=%v, text=%q) -> %v", origin, text, opposite)
+			log.Printf("writeText(origin=%v, anchor=%v, text=%q) -> %v", origin, anchor, text, opposite)
 		}
 	}()
 	// TODO: fix this to work in case dst's bounds is not (0, 0).
@@ -761,12 +776,16 @@ func (r renderer) writeText(dst draw.Image, origin image.Point, anchor originAnc
 		Face: face,
 	}
 
+	// Figure out the dimensions of the text to draw.
+	// This is not the strict bounds (e.g. in the case of descenders), but we match to baselines
+	// so that text can be aligned in a single line.
+	// Ascent is -bounds.Min.Y, and descent (which we ignore) is bounds.Max.Y.
+	// Always use the advance to get to where the next glyph should go.
 	bounds, advance := d.BoundString(text)
-	boundsWidth, boundsHeight := (bounds.Max.X - bounds.Min.X), (bounds.Max.Y - bounds.Min.Y)
+	drawWidth, drawHeight := advance, -bounds.Min.Y
 
-	// If the advance is bigger than the bounds, use it.
-	if advance > boundsWidth {
-		boundsWidth = advance
+	if *debug {
+		log.Printf("writeText: bounds of %q: = %v (ascent=%d descent=%d)", text, bounds, -bounds.Min.Y, bounds.Max.Y)
 	}
 
 	dstSize := dst.Bounds().Size()
@@ -791,16 +810,19 @@ func (r renderer) writeText(dst draw.Image, origin image.Point, anchor originAnc
 	}
 	switch anchor {
 	case topLeft:
-		d.Dot.Y += boundsHeight
+		d.Dot.Y += drawHeight
 	case topRight:
-		d.Dot.X -= boundsWidth
-		d.Dot.Y += boundsHeight
+		d.Dot.X -= drawWidth
+		d.Dot.Y += drawHeight
 	case bottomLeft:
 		// correct already
 	case bottomRight:
-		d.Dot.X -= boundsWidth
+		d.Dot.X -= drawWidth
 	}
 
+	if *debug {
+		log.Printf("writeText: baseline location: Dot=%v", d.Dot)
+	}
 	d.DrawString(text)
 
 	// d.Dot is now at the bottom right corner.
@@ -810,12 +832,12 @@ func (r renderer) writeText(dst draw.Image, origin image.Point, anchor originAnc
 	case topLeft: // return bottom right
 		// correct already
 	case topRight: // return bottom left
-		d.Dot.X -= boundsWidth
+		d.Dot.X -= drawWidth
 	case bottomLeft: // return top right
-		d.Dot.Y -= boundsHeight
+		d.Dot.Y -= drawHeight
 	case bottomRight: // return top left
-		d.Dot.X -= boundsWidth
-		d.Dot.Y -= boundsHeight
+		d.Dot.X -= drawWidth
+		d.Dot.Y -= drawHeight
 	}
 
 	return image.Pt(d.Dot.X.Round(), d.Dot.Y.Round())
