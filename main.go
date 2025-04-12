@@ -545,7 +545,7 @@ func (r *refresher) Refresh(ctx context.Context) displayData {
 }
 
 func (r *refresher) reorder(ctx context.Context) {
-	type oi struct { // ordered item
+	type ot struct { // ordered task
 		ID         string
 		Content    string
 		Labels     []string
@@ -553,38 +553,38 @@ func (r *refresher) reorder(ctx context.Context) {
 	}
 
 	for project, ro := range r.reorderers {
-		var items []oi
-		for _, item := range r.ts.Items {
-			if r.ts.Projects[item.ProjectID].Name != project {
+		var tasks []ot
+		for _, task := range r.ts.Tasks {
+			if r.ts.Projects[task.ProjectID].Name != project {
 				continue
 			}
-			if item.ParentID != "" {
+			if task.ParentID != "" {
 				continue
 			}
-			items = append(items, oi{item.ID, item.Content, item.Labels, item.ChildOrder})
+			tasks = append(tasks, ot{task.ID, task.Content, task.Labels, task.ChildOrder})
 		}
 		// First put them in their current order.
-		sort.SliceStable(items, func(i, j int) bool { return items[i].ChildOrder < items[j].ChildOrder })
+		sort.SliceStable(tasks, func(i, j int) bool { return tasks[i].ChildOrder < tasks[j].ChildOrder })
 		// Figure out the desired arrangement.
-		arr := ro.Arrange(len(items), func(i int) string { return items[i].Content })
+		arr := ro.Arrange(len(tasks), func(i int) string { return tasks[i].Content })
 		// Any label adjustments to make?
 		for i, x := range arr.New {
-			item := items[x]
-			want := "" // what s: label should this item have?
+			task := tasks[x]
+			want := "" // what s: label should this task have?
 			if i < len(arr.Groups) {
 				want = "s:" + arr.Groups[i]
 			}
 			seen := false   // whether want!="" and we've seen it
-			update := false // whether to update the item
-			for i := 0; i < len(item.Labels); {
-				label := item.Labels[i]
+			update := false // whether to update the task
+			for i := 0; i < len(task.Labels); {
+				label := task.Labels[i]
 				if !strings.HasPrefix(label, "s:") {
 					i++
 					continue // not ours to touch
 				}
 				if label != want {
-					copy(item.Labels[i:], item.Labels[i+1:])
-					item.Labels = item.Labels[:len(item.Labels)-1]
+					copy(task.Labels[i:], task.Labels[i+1:])
+					task.Labels = task.Labels[:len(task.Labels)-1]
 					update = true
 					continue
 				}
@@ -592,26 +592,26 @@ func (r *refresher) reorder(ctx context.Context) {
 				i++
 			}
 			if want != "" && !seen {
-				item.Labels = append(item.Labels, want)
+				task.Labels = append(task.Labels, want)
 				update = true
 			}
 			if !update {
 				continue
 			}
-			if err := r.ts.UpdateItem(ctx, item.ID, todoist.ItemUpdates{Labels: &item.Labels}); err != nil {
-				log.Printf("UpdateItem: %v", err)
+			if err := r.ts.UpdateTask(ctx, task.ID, todoist.TaskUpdates{Labels: &task.Labels}); err != nil {
+				log.Printf("UpdateTask: %v", err)
 				continue
 			}
-			log.Printf("Updated %q to this label set: %q", item.Content, item.Labels)
+			log.Printf("Updated %q to this label set: %q", task.Content, task.Labels)
 		}
 		// Are any changes required?
 		changes := false
-		var ids []string // new order of item IDs
+		var ids []string // new order of task IDs
 		for i, x := range arr.New {
 			if i != x {
 				changes = true
 			}
-			ids = append(ids, items[x].ID)
+			ids = append(ids, tasks[x].ID)
 		}
 		if !changes {
 			continue

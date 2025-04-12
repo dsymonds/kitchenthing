@@ -100,7 +100,7 @@ func timeCompare(a, b time.Time) int {
 func RenderableTasks(ts *todoist.Syncer) []renderableTask {
 	var res []renderableTask
 
-	for _, task := range ts.Items {
+	for _, task := range ts.Tasks {
 		proj := ts.Projects[task.ProjectID]
 		if !proj.Shared {
 			continue
@@ -146,51 +146,51 @@ func RenderableTasks(ts *todoist.Syncer) []renderableTask {
 }
 
 func ApplyMetadata(ctx context.Context, ts *todoist.Syncer, mutate bool) {
-	for _, item := range ts.Items {
-		for _, label := range item.Labels {
+	for _, task := range ts.Tasks {
+		for _, label := range task.Labels {
 			if strings.HasPrefix(label, "m:") {
-				if err := applyMetadata(ctx, ts, item, label, mutate); err != nil {
-					log.Printf("Applying metadata label %q to item %s (%q): %v", label, item.ID, item.Content, err)
+				if err := applyMetadata(ctx, ts, task, label, mutate); err != nil {
+					log.Printf("Applying metadata label %q to task %s (%q): %v", label, task.ID, task.Content, err)
 				}
 			}
 		}
 	}
 }
 
-func applyMetadata(ctx context.Context, ts *todoist.Syncer, item todoist.Item, label string, mutate bool) error {
+func applyMetadata(ctx context.Context, ts *todoist.Syncer, task todoist.Task, label string, mutate bool) error {
 	switch label {
 	case "m:uf":
-		// Unassign if the item is due in the future (after today).
-		if item.Due == nil || item.Due.When() <= 0 {
+		// Unassign if the task is due in the future (after today).
+		if task.Due == nil || task.Due.When() <= 0 {
 			return nil
 		}
-		if item.Responsible != nil {
+		if task.Responsible != nil {
 			if !mutate {
-				log.Printf("Would unassign %s (%q)...", item.ID, item.Content)
+				log.Printf("Would unassign %s (%q)...", task.ID, task.Content)
 			} else {
-				if err := ts.Assign(ctx, item, ""); err != nil {
+				if err := ts.Assign(ctx, task, ""); err != nil {
 					return fmt.Errorf("unassigning: %w", err)
 				}
-				log.Printf("Unassigned %q", item.Content)
+				log.Printf("Unassigned %q", task.Content)
 			}
 		}
 
 		// Remove any "in-progress" label.
 		var labels []string
-		for _, label := range item.Labels {
+		for _, label := range task.Labels {
 			if label != "in-progress" {
 				labels = append(labels, label)
 			}
 		}
-		if len(labels) != len(item.Labels) {
+		if len(labels) != len(task.Labels) {
 			if !mutate {
-				log.Printf("Would change label set from %v to %v", item.Labels, labels)
+				log.Printf("Would change label set from %v to %v", task.Labels, labels)
 			} else {
-				err := ts.UpdateItem(ctx, item.ID, todoist.ItemUpdates{Labels: &labels})
+				err := ts.UpdateTask(ctx, task.ID, todoist.TaskUpdates{Labels: &labels})
 				if err != nil {
 					return fmt.Errorf("removing labels: %w", err)
 				}
-				log.Printf("Changed label set from %v to %v", item.Labels, labels)
+				log.Printf("Changed label set from %v to %v", task.Labels, labels)
 			}
 		}
 
@@ -199,8 +199,8 @@ func applyMetadata(ctx context.Context, ts *todoist.Syncer, item todoist.Item, l
 		// If there's any other tasks with the same title in the same project, and a lower ID,
 		// complete this task automatically.
 		matched := false
-		for _, other := range ts.Items {
-			if other.Content == item.Content && other.ProjectID == item.ProjectID && other.ID < item.ID {
+		for _, other := range ts.Tasks {
+			if other.Content == task.Content && other.ProjectID == task.ProjectID && other.ID < task.ID {
 				matched = true
 				break
 			}
@@ -209,13 +209,13 @@ func applyMetadata(ctx context.Context, ts *todoist.Syncer, item todoist.Item, l
 			return nil
 		}
 		if !mutate {
-			log.Printf("Would delete %s (%q)...", item.ID, item.Content)
+			log.Printf("Would delete %s (%q)...", task.ID, task.Content)
 			return nil
 		}
-		if err := ts.DeleteItem(ctx, item.ID); err != nil {
-			return fmt.Errorf("deleting item: %w", err)
+		if err := ts.DeleteTask(ctx, task.ID); err != nil {
+			return fmt.Errorf("deleting task: %w", err)
 		}
-		log.Printf("Deleted duplicate item %s (%q)...", item.ID, item.Content)
+		log.Printf("Deleted duplicate task %s (%q)...", task.ID, task.Content)
 	}
 
 	return nil
