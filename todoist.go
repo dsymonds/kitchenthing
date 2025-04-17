@@ -127,6 +127,7 @@ func RenderableTasks(ts *todoist.Syncer) []renderableTask {
 			rt.Assignee = name
 		}
 		if t, ok := task.Due.Time(); ok {
+			t = t.Local() // Force it to be local, even though tasks usually should already be that.
 			rt.Time = t
 		}
 		for _, label := range task.Labels {
