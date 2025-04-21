@@ -51,8 +51,13 @@ type Config struct {
 	TodoistAPIToken string        `yaml:"todoist_api_token"`
 	PhotosDir       string        `yaml:"photos_dir"`
 
-	Alertmanager string `yaml:"alertmanager"`
-	MQTT         string `yaml:"mqtt"`
+	Alertmanager  string `yaml:"alertmanager"`
+	MQTT          string `yaml:"mqtt"`
+	HomeAssistant struct {
+		Addr     string `yaml:"addr"`
+		Token    string `yaml:"token"`
+		Template string `yaml:"template"`
+	} `yaml:"home_assistant"`
 
 	Orderings []struct {
 		Project string          `yaml:"project"`
@@ -481,6 +486,7 @@ type displayData struct {
 	// TODO: report errors?
 
 	alerts []Alert
+	hass   string
 }
 
 func (dd displayData) Equal(o displayData) bool {
@@ -502,6 +508,9 @@ func (dd displayData) Equal(o displayData) bool {
 		if !dd.alerts[i].Same(o.alerts[i]) {
 			return false
 		}
+	}
+	if dd.hass != o.hass {
+		return false
 	}
 	return true
 }
@@ -538,6 +547,15 @@ func (r *refresher) Refresh(ctx context.Context) displayData {
 			log.Printf("Fetching alerts from Alertmanager %s: %v", r.cfg.Alertmanager, err)
 		} else {
 			dd.alerts = as
+		}
+	}
+
+	if hacfg := r.cfg.HomeAssistant; hacfg.Addr != "" {
+		ha, err := FetchHASS(ctx, hacfg.Addr, hacfg.Token, hacfg.Template)
+		if err != nil {
+			log.Printf("Querying HomeAssistant: %v", err)
+		} else {
+			dd.hass = ha
 		}
 	}
 
@@ -692,6 +710,15 @@ func (r renderer) Render(dst draw.Image, data displayData) {
 	bottomOfListY := listBase.Y + (len(data.tasks)-1)*listVPitch
 	topOfFooterY := dst.Bounds().Max.Y - 2
 
+	// Put HASS template data at the very bottom, if present.
+	if data.hass != "" {
+		hassFont := r.small
+		vPitch := hassFont.Metrics().Height.Ceil()
+		origin := image.Pt(2, topOfFooterY)
+		r.writeText(dst, origin, bottomLeft, color.Black, hassFont, data.hass)
+		topOfFooterY -= vPitch
+	}
+
 	// Render alerts from the bottom up.
 	alertFont := r.tiny
 	alertListVPitch := alertFont.Metrics().Height.Ceil()
@@ -708,10 +735,6 @@ func (r renderer) Render(dst draw.Image, data displayData) {
 		r.writeText(dst, origin, bottomLeft, color.Black, alertFont, ": "+alert.Description)
 
 		topOfFooterY -= alertListVPitch
-	}
-
-	if len(data.alerts) == 0 {
-		r.writeText(dst, image.Pt(-2, -2), bottomRight, color.Black, r.tiny, "π")
 	}
 
 	sub := clippedImage{
