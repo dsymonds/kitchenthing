@@ -666,11 +666,39 @@ func (r renderer) Render(dst draw.Image, data displayData) {
 	r.writeText(dst, next, bottomLeft, color.Black, r.large, subtitle)
 	next = image.Pt(2, dateBL.Y)
 
+	// Render footer first, so we know where to stop rendering tasks to avoid overlap.
+	topOfFooterY := dst.Bounds().Max.Y - 2
+	// Put HASS template data at the very bottom, if present.
+	if data.hass != "" {
+		hassFont := r.small
+		vPitch := hassFont.Metrics().Height.Ceil()
+		origin := image.Pt(2, topOfFooterY)
+		r.writeText(dst, origin, bottomLeft, color.Black, hassFont, data.hass)
+		topOfFooterY -= vPitch
+	}
+	// Render alerts from the bottom up.
+	alertFont := r.tiny
+	alertListVPitch := alertFont.Metrics().Height.Ceil()
+	for i := len(data.alerts) - 1; i >= 0; i-- {
+		alert := data.alerts[i]
+		origin := image.Pt(2, topOfFooterY)
+		next := r.writeText(dst, origin, bottomLeft, colorRed, alertFont, alert.Summary)
+		origin.X = next.X
+		r.writeText(dst, origin, bottomLeft, color.Black, alertFont, ": "+alert.Description)
+
+		topOfFooterY -= alertListVPitch
+	}
+
 	listVPitch := r.normal.Metrics().Height.Ceil()
 	listBase := image.Pt(10, next.Y+2+listVPitch) // baseline of each list entry
 	for i, task := range data.tasks {             // TODO: adjust font size for task count?
 		baselineY := listBase.Y + i*listVPitch
 		origin := image.Pt(listBase.X, baselineY)
+
+		if baselineY >= topOfFooterY {
+			// Would overlap with alerts/HASS.
+			break
+		}
 
 		var titleCol color.Color = color.Black
 		if task.Overdue {
@@ -708,34 +736,6 @@ func (r renderer) Render(dst draw.Image, data displayData) {
 		r.writeText(dst, origin, bottomLeft, colorRed, r.small, task.Project)
 	}
 	bottomOfListY := listBase.Y + (len(data.tasks)-1)*listVPitch
-	topOfFooterY := dst.Bounds().Max.Y - 2
-
-	// Put HASS template data at the very bottom, if present.
-	if data.hass != "" {
-		hassFont := r.small
-		vPitch := hassFont.Metrics().Height.Ceil()
-		origin := image.Pt(2, topOfFooterY)
-		r.writeText(dst, origin, bottomLeft, color.Black, hassFont, data.hass)
-		topOfFooterY -= vPitch
-	}
-
-	// Render alerts from the bottom up.
-	alertFont := r.tiny
-	alertListVPitch := alertFont.Metrics().Height.Ceil()
-	for i := len(data.alerts) - 1; i >= 0; i-- {
-		// Stop before we get to the task list.
-		if topOfFooterY-alertListVPitch <= bottomOfListY {
-			break
-		}
-
-		alert := data.alerts[i]
-		origin := image.Pt(2, topOfFooterY)
-		next := r.writeText(dst, origin, bottomLeft, colorRed, alertFont, alert.Summary)
-		origin.X = next.X
-		r.writeText(dst, origin, bottomLeft, color.Black, alertFont, ": "+alert.Description)
-
-		topOfFooterY -= alertListVPitch
-	}
 
 	sub := clippedImage{
 		img: dst,
