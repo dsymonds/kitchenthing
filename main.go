@@ -691,12 +691,14 @@ func (r renderer) Render(dst draw.Image, data displayData) {
 
 	listVPitch := r.normal.Metrics().Height.Ceil()
 	listBase := image.Pt(10, next.Y+2+listVPitch) // baseline of each list entry
-	for i, task := range data.tasks {             // TODO: adjust font size for task count?
+	hiddenTasks := 0
+	for i, task := range data.tasks { // TODO: adjust font size for task count?
 		baselineY := listBase.Y + i*listVPitch
 		origin := image.Pt(listBase.X, baselineY)
 
 		if baselineY >= topOfFooterY {
 			// Would overlap with alerts/HASS.
+			hiddenTasks = len(data.tasks) - i
 			break
 		}
 
@@ -735,7 +737,17 @@ func (r renderer) Render(dst draw.Image, data displayData) {
 		origin = image.Pt(next.X+10, baselineY)
 		r.writeText(dst, origin, bottomLeft, colorRed, r.small, task.Project)
 	}
-	bottomOfListY := listBase.Y + (len(data.tasks)-1)*listVPitch
+	bottomOfListY := listBase.Y + (len(data.tasks)-hiddenTasks-1)*listVPitch
+
+	if hiddenTasks > 0 {
+		origin := image.Pt(dst.Bounds().Max.X-2, dst.Bounds().Max.Y-2)
+		noun := "task"
+		if hiddenTasks != 1 {
+			noun = "tasks"
+		}
+		msg := fmt.Sprintf("%d %s hidden", hiddenTasks, noun)
+		r.writeText(dst, origin, bottomRight, colorRed, r.tiny, msg)
+	}
 
 	sub := clippedImage{
 		img: dst,
