@@ -169,7 +169,7 @@ func applyMetadata(ctx context.Context, ts *todoist.Syncer, task todoist.Task, l
 			if !mutate {
 				log.Printf("Would unassign %s (%q)...", task.ID, task.Content)
 			} else {
-				if err := ts.Assign(ctx, task, ""); err != nil {
+				if err := ts.Assign(ctx, task.ID, ""); err != nil {
 					return fmt.Errorf("unassigning: %w", err)
 				}
 				log.Printf("Unassigned %q", task.Content)
