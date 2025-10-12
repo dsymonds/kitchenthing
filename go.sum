@@ -1,7 +1,7 @@
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
-github.com/dsymonds/todoist v0.0.0-20250927033229-f5a45eeee207 h1:W4AiMOae0/kLsKvlhX73evG+y8UpPRsDEtJ2ddd6vCE=
-github.com/dsymonds/todoist v0.0.0-20250927033229-f5a45eeee207/go.mod h1:AC+ZX3smxKe7EUCHKN3nYcKPEBgMQ/628UlsiosVKT4=
+github.com/dsymonds/todoist v0.0.0-20251012023345-693aa35840fc h1:CMhKInfx3NW/f6bYTGaQjN23nG29KDn/1+Zrohkpjcc=
+github.com/dsymonds/todoist v0.0.0-20251012023345-693aa35840fc/go.mod h1:AC+ZX3smxKe7EUCHKN3nYcKPEBgMQ/628UlsiosVKT4=
 github.com/eclipse/paho.golang v0.21.0 h1:cxxEReu+iFbA5RrHfRGxJOh8tXZKDywuehneoeBeyn8=
 github.com/eclipse/paho.golang v0.21.0/go.mod h1:GHF6vy7SvDbDHBguaUpfuBkEB5G6j0zKxMG4gbh6QRQ=
 github.com/google/go-cmp v0.5.9 h1:O2Tfq5qg4qc4AmwVlvv0oLiVAGB7enBSJ2x2DqQFi38=
