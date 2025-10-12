@@ -226,11 +226,12 @@ func applyMetadata(ctx context.Context, ts *todoist.Syncer, task todoist.Task, l
 			return fmt.Errorf("parsing m:rem value %q: %w", val)
 		}
 
-		// Only reminders for assigned tasks, and tasks with a due time.
+		// Only reminders for assigned tasks, and tasks with a due time far enough in the future.
 		if task.Responsible == nil || task.Due == nil {
 			return nil
 		}
-		if _, ok := task.Due.Time(); !ok {
+		t, ok := task.Due.Time()
+		if !ok || time.Until(t) < d {
 			return nil
 		}
 		mins := int(d.Minutes())
