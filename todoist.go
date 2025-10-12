@@ -159,8 +159,8 @@ func ApplyMetadata(ctx context.Context, ts *todoist.Syncer, mutate bool) {
 }
 
 func applyMetadata(ctx context.Context, ts *todoist.Syncer, task todoist.Task, label string, mutate bool) error {
-	switch label {
-	case "m:uf":
+	switch {
+	case label == "m:uf":
 		// Unassign if the task is due in the future (after today).
 		if task.Due == nil || task.Due.When() <= 0 {
 			return nil
@@ -196,7 +196,7 @@ func applyMetadata(ctx context.Context, ts *todoist.Syncer, task todoist.Task, l
 		}
 
 		return nil
-	case "m:dd":
+	case label == "m:dd":
 		// If there's any other tasks with the same title in the same project, and a lower ID,
 		// complete this task automatically.
 		matched := false
@@ -217,39 +217,44 @@ func applyMetadata(ctx context.Context, ts *todoist.Syncer, task todoist.Task, l
 			return fmt.Errorf("deleting task: %w", err)
 		}
 		log.Printf("Deleted duplicate task %s (%q)...", task.ID, task.Content)
-	case "m:rem":
-		// Add at-time and -1h reminders for the user this task is assigned to.
-		if task.Responsible == nil {
+	case strings.HasPrefix(label, "m:rem="):
+		// Add reminder for the user this task is assigned to.
+
+		val := label[6:] // skip over "m:rem="
+		d, err := time.ParseDuration(val)
+		if err != nil {
+			return fmt.Errorf("parsing m:rem value %q: %w", val)
+		}
+
+		// Only reminders for assigned tasks, and tasks with a due time.
+		if task.Responsible == nil || task.Due == nil {
 			return nil
 		}
-		ip := func(i int) *int { return &i }
-		want := []todoist.Reminder{
-			// TODO: Make this set configurable somehow.
-			{TaskID: task.ID, UserID: *task.Responsible, Type: "relative", MinuteOffset: ip(0)},
-			{TaskID: task.ID, UserID: *task.Responsible, Type: "relative", MinuteOffset: ip(60)},
+		if _, ok := task.Due.Time(); !ok {
+			return nil
 		}
-		// Remove from want any reminders we already have.
+		mins := int(d.Minutes())
+		want := todoist.Reminder{
+			TaskID:       task.ID,
+			UserID:       *task.Responsible,
+			Type:         "relative",
+			MinuteOffset: &mins,
+		}
+		// Ignore if an equivalent reminder exists.
+		// TODO: Inspect IsDeleted flag?
 		for _, rem := range ts.Reminders {
-			for i := len(want) - 1; i >= 0; i-- {
-				if equivReminders(rem, want[i]) {
-					copy(want[i:], want[i+1:])
-					want = want[:len(want)-1]
-				}
+			if equivReminders(rem, want) {
+				return nil
 			}
-		}
-		if len(want) == 0 {
-			return nil
 		}
 		if !mutate {
-			log.Printf("Would add %d reminders to task %q", len(want), task.Content)
+			log.Printf("Would add reminder at t%+dmin to task %q", -mins, task.Content)
 			return nil
 		}
-		for _, rem := range want {
-			if err := ts.AddReminder(ctx, rem); err != nil {
-				return fmt.Errorf("adding reminder: %w", err)
-			}
-			log.Printf("Added reminder to %q", task.Content)
+		if err := ts.AddReminder(ctx, want); err != nil {
+			return fmt.Errorf("adding reminder: %w", err)
 		}
+		log.Printf("Added reminder to %q", task.Content)
 	}
 
 	return nil
