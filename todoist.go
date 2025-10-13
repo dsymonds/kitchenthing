@@ -177,22 +177,8 @@ func applyMetadata(ctx context.Context, ts *todoist.Syncer, task todoist.Task, l
 		}
 
 		// Remove any "in-progress" label.
-		var labels []string
-		for _, label := range task.Labels {
-			if label != "in-progress" {
-				labels = append(labels, label)
-			}
-		}
-		if len(labels) != len(task.Labels) {
-			if !mutate {
-				log.Printf("Would change label set from %v to %v", task.Labels, labels)
-			} else {
-				err := ts.UpdateTask(ctx, task.ID, todoist.TaskUpdates{Labels: &labels})
-				if err != nil {
-					return fmt.Errorf("removing labels: %w", err)
-				}
-				log.Printf("Changed label set from %v to %v", task.Labels, labels)
-			}
+		if err := removeLabel(ctx, ts, task, "in-progress", mutate); err != nil {
+			return err
 		}
 
 		return nil
@@ -241,21 +227,30 @@ func applyMetadata(ctx context.Context, ts *todoist.Syncer, task todoist.Task, l
 			Type:         "relative",
 			MinuteOffset: &mins,
 		}
-		// Ignore if an equivalent reminder exists.
+		// Add if there isn't already an equivalent reminder.
 		// TODO: Inspect IsDeleted flag?
+		equiv := false
 		for _, rem := range ts.Reminders {
 			if equivReminders(rem, want) {
-				return nil
+				equiv = true
+				break
 			}
 		}
-		if !mutate {
-			log.Printf("Would add reminder at t%+dmin to task %q", -mins, task.Content)
-			return nil
+		if !equiv {
+			if !mutate {
+				log.Printf("Would add reminder at t%+dmin to task %q", -mins, task.Content)
+			} else {
+				if err := ts.AddReminder(ctx, want); err != nil {
+					return fmt.Errorf("adding reminder: %w", err)
+				}
+				log.Printf("Added reminder to %q", task.Content)
+			}
 		}
-		if err := ts.AddReminder(ctx, want); err != nil {
-			return fmt.Errorf("adding reminder: %w", err)
+
+		// Remove this label.
+		if err := removeLabel(ctx, ts, task, label, mutate); err != nil {
+			return err
 		}
-		log.Printf("Added reminder to %q", task.Content)
 	}
 
 	return nil
@@ -272,4 +267,26 @@ func equivReminders(a, b todoist.Reminder) bool {
 		return false
 	}
 	return true
+}
+
+func removeLabel(ctx context.Context, ts *todoist.Syncer, task todoist.Task, remove string, mutate bool) error {
+	labels := []string{} // Todoist wants an empty slice to end up with zero labels.
+	for _, label := range task.Labels {
+		if label != remove {
+			labels = append(labels, label)
+		}
+	}
+	if len(labels) == len(task.Labels) {
+		return nil
+	}
+	if !mutate {
+		log.Printf("Would change label set from %v to %v", task.Labels, labels)
+		return nil
+	}
+	err := ts.UpdateTask(ctx, task.ID, todoist.TaskUpdates{Labels: &labels})
+	if err != nil {
+		return fmt.Errorf("removing labels: %w", err)
+	}
+	log.Printf("Changed label set from %v to %v", task.Labels, labels)
+	return nil
 }
