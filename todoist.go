@@ -209,7 +209,7 @@ func applyMetadata(ctx context.Context, ts *todoist.Syncer, task todoist.Task, l
 		val := label[6:] // skip over "m:rem="
 		d, err := time.ParseDuration(val)
 		if err != nil {
-			return fmt.Errorf("parsing m:rem value %q: %w", val)
+			return fmt.Errorf("parsing m:rem value %q: %w", val, err)
 		}
 
 		// Only reminders for assigned tasks, and tasks with a due time far enough in the future.
