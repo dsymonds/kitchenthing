@@ -457,6 +457,10 @@ type refresher struct {
 	ts  *todoist.Syncer
 
 	reorderers map[string]*Reorderer
+
+	// lastOpenTasks is a set of Todoist task IDs of tasks that were open
+	// last time ts.Sync ran. This is used to detect tasks that get completed.
+	lastOpenTasks map[string]todoist.Task
 }
 
 func newRefresher(cfg Config) (*refresher, error) {
@@ -537,6 +541,18 @@ func (r *refresher) Refresh(ctx context.Context) displayData {
 		log.Printf("Syncing from Todoist: %v", err)
 		// Continue on and use any existing data.
 	}
+	newOpen, closed := make(map[string]todoist.Task), r.lastOpenTasks
+	for id, task := range r.ts.Tasks {
+		// this is actually only the open tasks, but be defensive.
+		if task.Checked {
+			log.Printf("Woah! Task %q remains in ts.Tasks, but is checked!", task.Content)
+			continue
+		}
+		newOpen[id] = task
+		delete(closed, id)
+	}
+	r.lastOpenTasks = newOpen
+
 	dd.tasks = RenderableTasks(r.ts)
 	ApplyMetadata(ctx, r.ts, *actOnMetadata)
 	r.reorder(ctx)
@@ -551,11 +567,26 @@ func (r *refresher) Refresh(ctx context.Context) displayData {
 	}
 
 	if hacfg := r.cfg.HomeAssistant; hacfg.Addr != "" {
-		ha, err := FetchHASS(ctx, hacfg.Addr, hacfg.Token, hacfg.Template)
+		hass := HASS{addr: hacfg.Addr, token: hacfg.Token}
+
+		ha, err := hass.RenderTemplate(ctx, hacfg.Template)
 		if err != nil {
 			log.Printf("Querying HomeAssistant: %v", err)
 		} else {
 			dd.hass = ha
+		}
+
+		for _, task := range closed {
+			data := struct {
+				Content string `json:"content"`
+				Project string `json:"project"`
+			}{
+				Content: task.Content,
+				Project: r.ts.Projects[task.ProjectID].Name,
+			}
+			if err := hass.FireEvent(ctx, "todoist_task_completed", data); err != nil {
+				log.Printf("Firing HASS event: %v", err)
+			}
 		}
 	}
 
