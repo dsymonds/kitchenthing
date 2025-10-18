@@ -43,6 +43,7 @@ var (
 
 	testRender  = flag.String("test_render", "", "`filename` to render a PNG to")
 	testTodoist = flag.Bool("test_todoist", false, "whether to use fake Todoist data")
+	usePaper    = flag.Bool("use_paper", true, "whether to interact with ePaper")
 )
 
 type Config struct {
@@ -144,7 +145,7 @@ func main() {
 	log.Printf("kitchenthing starting...")
 	time.Sleep(500 * time.Millisecond)
 
-	p := newPaper()
+	p := newPaper() // doesn't interact with paper
 
 	var wg sync.WaitGroup
 	ctx, cancel := context.WithCancel(context.Background())
@@ -191,8 +192,10 @@ func main() {
 		log.Fatalf("MQTT: %v", err)
 	}
 
-	if err := p.Start(); err != nil {
-		log.Fatalf("Paper start: %v", err)
+	if *usePaper {
+		if err := p.Start(); err != nil {
+			log.Fatalf("Paper start: %v", err)
+		}
 	}
 
 	// Wait a bit. If things are still okay, consider this a successful startup.
@@ -218,7 +221,9 @@ func main() {
 exit:
 	<-ctx.Done()
 	wg.Wait()
-	p.Stop()
+	if *usePaper {
+		p.Stop()
+	}
 	log.Printf("kitchenthing done")
 }
 
@@ -366,10 +371,12 @@ func loop(ctx context.Context, cfg Config, rend renderer, ref *refresher, p pape
 				}
 			}
 
-			p.Init()
-			rend.Render(p, data)
-			p.DisplayRefresh()
-			p.Sleep()
+			if *usePaper {
+				p.Init()
+				rend.Render(p, data)
+				p.DisplayRefresh()
+				p.Sleep()
+			}
 			prev = data
 		}
 
