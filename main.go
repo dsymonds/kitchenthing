@@ -705,7 +705,7 @@ func (r renderer) Render(dst draw.Image, data displayData) {
 	next = image.Pt(2, dateBL.Y)
 
 	// Render footer first, so we know where to stop rendering tasks to avoid overlap.
-	topOfFooterY := dst.Bounds().Max.Y - 2
+	topOfFooterY := dst.Bounds().Max.Y - 4
 	// Put HASS template data at the very bottom, if present.
 	if data.hass != "" {
 		hassFont := r.small
