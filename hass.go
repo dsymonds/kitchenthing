@@ -11,14 +11,14 @@ import (
 	"net/url"
 )
 
+// https://developers.home-assistant.io/docs/api/rest/
+
 type HASS struct {
 	addr  string
 	token string
 }
 
 func (h *HASS) RenderTemplate(ctx context.Context, template string) (string, error) {
-	// https://developers.home-assistant.io/docs/api/rest/
-
 	treq := struct {
 		Template string `json:"template"`
 	}{Template: template}
@@ -44,6 +44,21 @@ func (h *HASS) FireEvent(ctx context.Context, eventType string, eventData any) e
 	return nil
 }
 
+// SetState sets an entity's state.
+// The value should be a structure with at least a `state` key.
+func (h *HASS) SetState(ctx context.Context, entityID string, value any) error {
+	body, err := h.post(ctx, "/api/states/"+url.PathEscape(entityID), value)
+	if err != nil {
+		return err
+	}
+	var resp json.RawMessage
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return fmt.Errorf("decoding JSON response: %w", err)
+	}
+	//log.Printf("HASS state set; HASS responded with: %s", resp)
+	return nil
+}
+
 func (h *HASS) post(ctx context.Context, path string, treq any) ([]byte, error) {
 	body, err := json.Marshal(treq)
 	if err != nil {
@@ -66,9 +81,9 @@ func (h *HASS) post(ctx context.Context, path string, treq any) ([]byte, error) 
 	if err != nil {
 		return nil, fmt.Errorf("reading HTTP response body: %w", err)
 	}
-	if resp.StatusCode != 200 {
+	if resp.StatusCode >= 300 {
 		log.Printf("HASS error %s: [%s]", resp.Status, respBody)
-		return nil, fmt.Errorf("non-200 response: %s", resp.Status)
+		return nil, fmt.Errorf("non-2xx response: %s", resp.Status)
 	}
 	return respBody, nil
 }

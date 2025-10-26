@@ -53,7 +53,6 @@ type Config struct {
 	PhotosDir       string        `yaml:"photos_dir"`
 
 	Alertmanager  string `yaml:"alertmanager"`
-	MQTT          string `yaml:"mqtt"`
 	HomeAssistant struct {
 		Addr     string `yaml:"addr"`
 		Token    string `yaml:"token"`
@@ -187,11 +186,6 @@ func main() {
 		httpServer.Shutdown(context.Background())
 	}()
 
-	mqtt, err := NewMQTT(cfg)
-	if err != nil {
-		log.Fatalf("MQTT: %v", err)
-	}
-
 	if *usePaper {
 		if err := p.Start(); err != nil {
 			log.Fatalf("Paper start: %v", err)
@@ -211,7 +205,7 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := loop(ctx, cfg, rend, ref, p, mqtt); err != nil {
+		if err := loop(ctx, cfg, rend, ref, p); err != nil {
 			log.Printf("Loop failed: %v", err)
 		}
 		cancel()
@@ -357,7 +351,19 @@ func (s *server) serveSetNextPhoto(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
-func loop(ctx context.Context, cfg Config, rend renderer, ref *refresher, p paper, mqtt *MQTT) error {
+func numPowerHungry(tasks []renderableTask) int {
+	// Count number of tasks that have the "power-hungry" label,
+	// and do *not* have the "in-progress" label.
+	phpc := 0
+	for _, t := range tasks {
+		if t.PowerHungry && !t.InProgress {
+			phpc++
+		}
+	}
+	return phpc
+}
+
+func loop(ctx context.Context, cfg Config, rend renderer, ref *refresher, p paper) error {
 	var prev displayData
 	for {
 		data := ref.Refresh(ctx)
@@ -365,9 +371,23 @@ func loop(ctx context.Context, cfg Config, rend renderer, ref *refresher, p pape
 		if !data.Equal(prev) {
 			log.Printf("New data to be displayed; refreshing now")
 
-			if mqtt != nil {
-				if err := mqtt.PublishUpdate(data.tasks); err != nil {
-					log.Printf("MQTT publish: %v", err)
+			if hacfg := cfg.HomeAssistant; hacfg.Addr != "" {
+				hass := HASS{addr: hacfg.Addr, token: hacfg.Token}
+				const entityID = "sensor.power_hungry_pending_count"
+				value := struct {
+					State      int               `json:"state"`
+					Attributes map[string]string `json:"attributes"`
+				}{
+					State: numPowerHungry(data.tasks),
+					Attributes: map[string]string{
+						"state_class":         "measurement",
+						"unit_of_measurement": "tasks",
+						"icon":                "mdi:checkbox-marked-circle-auto-outline",
+						"friendly_name":       "Todoist meta-device power-hungry pending count",
+					},
+				}
+				if err := hass.SetState(ctx, entityID, value); err != nil {
+					log.Printf("Setting HASS state: %v", err)
 				}
 			}
 
