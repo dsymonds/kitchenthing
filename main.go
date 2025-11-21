@@ -373,7 +373,7 @@ func loop(ctx context.Context, cfg Config, rend renderer, ref *refresher, p pape
 
 			if hacfg := cfg.HomeAssistant; hacfg.Addr != "" {
 				hass := HASS{addr: hacfg.Addr, token: hacfg.Token}
-				const entityID = "sensor.power_hungry_pending_count"
+				const entityID = "input_number.todoist_power_hungry_pending_count"
 				value := struct {
 					State      int               `json:"state"`
 					Attributes map[string]string `json:"attributes"`
@@ -383,7 +383,7 @@ func loop(ctx context.Context, cfg Config, rend renderer, ref *refresher, p pape
 						"state_class":         "measurement",
 						"unit_of_measurement": "tasks",
 						"icon":                "mdi:checkbox-marked-circle-auto-outline",
-						"friendly_name":       "Todoist meta-device power-hungry pending count",
+						"friendly_name":       "Todoist power-hungry pending count",
 					},
 				}
 				if err := hass.SetState(ctx, entityID, value); err != nil {
