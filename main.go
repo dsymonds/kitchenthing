@@ -786,7 +786,7 @@ func (r renderer) Render(dst draw.Image, data displayData) {
 			txt += " ◊"
 		}
 		if !task.Time.IsZero() {
-			txt += " <" + task.Time.Format(time.Kitchen) + ">"
+			txt += " <" + FormatTime(task.Time) + ">"
 		}
 		if task.Assignee != "" {
 			txt += " (" + task.Assignee + ")"
@@ -824,6 +824,26 @@ func (r renderer) Render(dst draw.Image, data displayData) {
 			}
 		}
 	}
+}
+
+func FormatTime(t time.Time) string {
+	h, m, _ := t.Clock()
+	ampm := "AM"
+	switch {
+	case h == 0:
+		h += 12
+	case h == 12:
+		ampm = "PM"
+	case h >= 13:
+		h -= 12
+		ampm = "PM"
+	}
+	ts := fmt.Sprintf("%d", h)
+	if m != 0 {
+		ts += fmt.Sprintf(":%02d", m)
+	}
+	ts += ampm
+	return ts
 }
 
 type originAnchor int

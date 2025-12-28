@@ -4,6 +4,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestServerWriteDoesNotSpin(t *testing.T) {
@@ -20,4 +21,28 @@ func TestServerWriteDoesNotSpin(t *testing.T) {
 	}
 	// This would break:
 	io.WriteString(s, "the final straw")
+}
+
+func TestFormatTime(t *testing.T) {
+	tests := []struct {
+		t time.Time
+		s string
+	}{
+		// Midnight or soon after:
+		{time.Date(2025, 12, 28, 0, 0, 0, 0, time.UTC), "12AM"},
+		{time.Date(2025, 12, 28, 0, 15, 0, 0, time.UTC), "12:15AM"},
+		// Noon, or just before/after:
+		{time.Date(2025, 12, 28, 11, 50, 0, 0, time.UTC), "11:50AM"},
+		{time.Date(2025, 12, 28, 12, 0, 0, 0, time.UTC), "12PM"},
+		{time.Date(2025, 12, 28, 12, 30, 0, 0, time.UTC), "12:30PM"},
+		// Afternoon/evening:
+		{time.Date(2025, 12, 28, 17, 0, 0, 0, time.UTC), "5PM"},
+		{time.Date(2025, 12, 28, 19, 30, 0, 0, time.UTC), "7:30PM"},
+	}
+	for _, test := range tests {
+		got := FormatTime(test.t)
+		if got != test.s {
+			t.Errorf("FormatTime(%v) = %q, want %q", test.t, got, test.s)
+		}
+	}
 }
