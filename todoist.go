@@ -217,8 +217,11 @@ func applyMetadata(ctx context.Context, ts *todoist.Syncer, task todoist.Task, l
 			return nil
 		}
 		t, ok := task.Due.Time()
-		if !ok || time.Until(t) < d {
+		if !ok {
 			return nil
+		}
+		if time.Until(t) < d {
+			return removeLabel(ctx, ts, task, label, mutate)
 		}
 		mins := int(d.Minutes())
 		want := todoist.Reminder{
