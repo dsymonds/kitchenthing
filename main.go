@@ -59,6 +59,8 @@ type Config struct {
 		Template string `yaml:"template"`
 	} `yaml:"home_assistant"`
 
+	Locations map[string]Location `yaml:"locations"`
+
 	Orderings []struct {
 		Project string          `yaml:"project"`
 		Groups  []GroupPatterns `yaml:"groups"`
@@ -66,6 +68,12 @@ type Config struct {
 
 	// Messages are applied in a first-match order.
 	Messages []message `yaml:"messages"`
+}
+
+type Location struct {
+	Name                string
+	Latitude, Longitude float64
+	Radius              int
 }
 
 type message struct {
@@ -581,7 +589,7 @@ func (r *refresher) Refresh(ctx context.Context) displayData {
 	r.lastOpenTasks = newOpen
 
 	dd.tasks = RenderableTasks(r.ts)
-	ApplyMetadata(ctx, r.ts, *actOnMetadata)
+	ApplyMetadata(ctx, r.ts, r.cfg, *actOnMetadata)
 	r.reorder(ctx)
 
 	if r.cfg.Alertmanager != "" {

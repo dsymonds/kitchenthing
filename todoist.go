@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -146,11 +147,11 @@ func RenderableTasks(ts *todoist.Syncer) []renderableTask {
 	return res
 }
 
-func ApplyMetadata(ctx context.Context, ts *todoist.Syncer, mutate bool) {
+func ApplyMetadata(ctx context.Context, ts *todoist.Syncer, cfg Config, mutate bool) {
 	for _, task := range ts.Tasks {
 		for _, label := range task.Labels {
 			if strings.HasPrefix(label, "m:") {
-				if err := applyMetadata(ctx, ts, task, label, mutate); err != nil {
+				if err := applyMetadata(ctx, ts, cfg, task, label, mutate); err != nil {
 					log.Printf("Applying metadata label %q to task %s (%q): %v", label, task.ID, task.Content, err)
 				}
 			}
@@ -158,7 +159,7 @@ func ApplyMetadata(ctx context.Context, ts *todoist.Syncer, mutate bool) {
 	}
 }
 
-func applyMetadata(ctx context.Context, ts *todoist.Syncer, task todoist.Task, label string, mutate bool) error {
+func applyMetadata(ctx context.Context, ts *todoist.Syncer, cfg Config, task todoist.Task, label string, mutate bool) error {
 	switch {
 	case label == "m:uf":
 		// Unassign if the task is due in the future (after today).
@@ -212,7 +213,7 @@ func applyMetadata(ctx context.Context, ts *todoist.Syncer, task todoist.Task, l
 		}
 
 		val := label[6:] // skip over "m:rem="
-		want, err := reminder(task, val)
+		want, err := reminder(cfg, task, val)
 		if err != nil {
 			return err
 		}
@@ -258,23 +259,39 @@ func applyMetadata(ctx context.Context, ts *todoist.Syncer, task todoist.Task, l
 }
 
 // reminder creates the desired reminder for the task.
-// val is a relative duration like "30m".
-func reminder(task todoist.Task, val string) (todoist.Reminder, error) {
-	d, err := time.ParseDuration(val)
-	if err == nil {
-		mins := int(d.Minutes())
+// val is either a relative duration like "30m", or a location ID.
+func reminder(cfg Config, task todoist.Task, val string) (todoist.Reminder, error) {
+	// Prefer a location ID.
+	loc, ok := cfg.Locations[val]
+	if ok {
 		return todoist.Reminder{
-			TaskID:       task.ID,
-			UserID:       *task.Responsible,
-			Type:         "relative",
-			MinuteOffset: &mins,
+			TaskID: task.ID,
+			UserID: *task.Responsible,
+			Type:   "location",
+
+			Name:      loc.Name,
+			Latitude:  strconv.FormatFloat(loc.Latitude, 'f', -1, 64),
+			Longitude: strconv.FormatFloat(loc.Longitude, 'f', -1, 64),
+			Radius:    loc.Radius,
 		}, nil
 	}
 
-	return todoist.Reminder{}, fmt.Errorf("could not handle m:rem value %q", val)
+	d, err := time.ParseDuration(val)
+	if err != nil {
+		return todoist.Reminder{}, fmt.Errorf("could not parse m:rem value %q: %w", val, err)
+	}
+
+	mins := int(d.Minutes())
+	return todoist.Reminder{
+		TaskID:       task.ID,
+		UserID:       *task.Responsible,
+		Type:         "relative",
+		MinuteOffset: &mins,
+	}, nil
 }
 
 func equivReminders(a, b todoist.Reminder) bool {
+	// TODO: support location-based reminders.
 	if a.TaskID != b.TaskID || a.UserID != b.UserID || a.Type != b.Type {
 		return false
 	}
