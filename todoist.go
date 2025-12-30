@@ -206,30 +206,28 @@ func applyMetadata(ctx context.Context, ts *todoist.Syncer, task todoist.Task, l
 	case strings.HasPrefix(label, "m:rem="):
 		// Add reminder for the user this task is assigned to.
 
-		val := label[6:] // skip over "m:rem="
-		d, err := time.ParseDuration(val)
-		if err != nil {
-			return fmt.Errorf("parsing m:rem value %q: %w", val, err)
-		}
-
-		// Only reminders for assigned tasks, and tasks with a due time far enough in the future.
+		// Only reminders for assigned tasks, and tasks with a due date.
 		if task.Responsible == nil || task.Due == nil {
 			return nil
 		}
-		t, ok := task.Due.Time()
-		if !ok {
-			return nil
+
+		val := label[6:] // skip over "m:rem="
+		want, err := reminder(task, val)
+		if err != nil {
+			return err
 		}
-		if time.Until(t) < d {
-			return removeLabel(ctx, ts, task, label, mutate)
+
+		// If this is relative, and it's too late, just delete the label.
+		if want.Type == "relative" {
+			t, ok := task.Due.Time()
+			if !ok {
+				return nil
+			}
+			if int(time.Until(t).Minutes()) <= *want.MinuteOffset {
+				return removeLabel(ctx, ts, task, label, mutate)
+			}
 		}
-		mins := int(d.Minutes())
-		want := todoist.Reminder{
-			TaskID:       task.ID,
-			UserID:       *task.Responsible,
-			Type:         "relative",
-			MinuteOffset: &mins,
-		}
+
 		// Add if there isn't already an equivalent reminder.
 		// TODO: Inspect IsDeleted flag?
 		equiv := false
@@ -241,7 +239,7 @@ func applyMetadata(ctx context.Context, ts *todoist.Syncer, task todoist.Task, l
 		}
 		if !equiv {
 			if !mutate {
-				log.Printf("Would add reminder at t%+dmin to task %q", -mins, task.Content)
+				log.Printf("Would add reminder %+v to task %q", want, task.Content)
 			} else {
 				if err := ts.AddReminder(ctx, want); err != nil {
 					return fmt.Errorf("adding reminder: %w", err)
@@ -257,6 +255,23 @@ func applyMetadata(ctx context.Context, ts *todoist.Syncer, task todoist.Task, l
 	}
 
 	return nil
+}
+
+// reminder creates the desired reminder for the task.
+// val is a relative duration like "30m".
+func reminder(task todoist.Task, val string) (todoist.Reminder, error) {
+	d, err := time.ParseDuration(val)
+	if err == nil {
+		mins := int(d.Minutes())
+		return todoist.Reminder{
+			TaskID:       task.ID,
+			UserID:       *task.Responsible,
+			Type:         "relative",
+			MinuteOffset: &mins,
+		}, nil
+	}
+
+	return todoist.Reminder{}, fmt.Errorf("could not handle m:rem value %q", val)
 }
 
 func equivReminders(a, b todoist.Reminder) bool {
