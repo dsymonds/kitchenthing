@@ -207,8 +207,8 @@ func applyMetadata(ctx context.Context, ts *todoist.Syncer, cfg Config, task tod
 	case strings.HasPrefix(label, "m:rem="):
 		// Add reminder for the user this task is assigned to.
 
-		// Only reminders for assigned tasks, and tasks with a due date.
-		if task.Responsible == nil || task.Due == nil {
+		// Only reminders for assigned tasks, and tasks with a due date of today.
+		if task.Responsible == nil || task.Due == nil || task.Due.When() != 0 {
 			return nil
 		}
 
