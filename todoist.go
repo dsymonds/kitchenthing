@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"sort"
@@ -151,13 +152,18 @@ func ApplyMetadata(ctx context.Context, ts *todoist.Syncer, cfg Config, mutate b
 	for _, task := range ts.Tasks {
 		for _, label := range task.Labels {
 			if strings.HasPrefix(label, "m:") {
-				if err := applyMetadata(ctx, ts, cfg, task, label, mutate); err != nil {
+				err := applyMetadata(ctx, ts, cfg, task, label, mutate)
+				if err == errMDStop {
+					break
+				} else if err != nil {
 					log.Printf("Applying metadata label %q to task %s (%q): %v", label, task.ID, task.Content, err)
 				}
 			}
 		}
 	}
 }
+
+var errMDStop = errors.New("error indicating to stop applying m: labels for the task")
 
 func applyMetadata(ctx context.Context, ts *todoist.Syncer, cfg Config, task todoist.Task, label string, mutate bool) error {
 	switch {
@@ -225,7 +231,10 @@ func applyMetadata(ctx context.Context, ts *todoist.Syncer, cfg Config, task tod
 				return nil
 			}
 			if int(time.Until(t).Minutes()) <= *want.MinuteOffset {
-				return removeLabel(ctx, ts, task, label, mutate)
+				if err := removeLabel(ctx, ts, task, label, mutate); err != nil {
+					return err
+				}
+				return errMDStop // no more metadata changes for this task this cycle
 			}
 		}
 
@@ -253,6 +262,7 @@ func applyMetadata(ctx context.Context, ts *todoist.Syncer, cfg Config, task tod
 		if err := removeLabel(ctx, ts, task, label, mutate); err != nil {
 			return err
 		}
+		return errMDStop // no more metadata changes for this task this cycle
 	}
 
 	return nil
