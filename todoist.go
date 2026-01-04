@@ -301,15 +301,20 @@ func reminder(cfg Config, task todoist.Task, val string) (todoist.Reminder, erro
 }
 
 func equivReminders(a, b todoist.Reminder) bool {
-	// TODO: support location-based reminders.
 	if a.TaskID != b.TaskID || a.UserID != b.UserID || a.Type != b.Type {
 		return false
 	}
-	if (a.MinuteOffset != nil) != (b.MinuteOffset != nil) {
-		return false
-	}
-	if a.MinuteOffset != nil && (*a.MinuteOffset != *b.MinuteOffset) {
-		return false
+	switch a.Type {
+	case "relative":
+		if (a.MinuteOffset != nil) != (b.MinuteOffset != nil) {
+			return false
+		}
+		if a.MinuteOffset != nil && (*a.MinuteOffset != *b.MinuteOffset) {
+			return false
+		}
+	case "location":
+		// Name should be enough fidelity.
+		return a.Name == b.Name
 	}
 	return true
 }
