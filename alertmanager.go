@@ -50,6 +50,9 @@ func FetchAlerts(ctx context.Context, amAddr string) ([]Alert, error) {
 
 	var alerts []Alert
 	for _, ga := range gas {
+		if ga.Labels["kitchenthing"] == "no" {
+			continue
+		}
 		alerts = append(alerts, Alert{
 			Fingerprint: ga.Fingerprint,
 			Summary:     cleanString(ga.Annotations["summary"]),
