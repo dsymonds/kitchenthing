@@ -28,6 +28,9 @@ import (
 	"time"
 
 	"github.com/dsymonds/todoist"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/opentype"
 	"golang.org/x/image/math/fixed"
@@ -44,6 +47,14 @@ var (
 	testRender  = flag.String("test_render", "", "`filename` to render a PNG to")
 	testTodoist = flag.Bool("test_todoist", false, "whether to use fake Todoist data")
 	usePaper    = flag.Bool("use_paper", true, "whether to interact with ePaper")
+
+	todoistSyncs = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "todoist_syncs_total",
+			Help: "Number of times the Todoist data was synchronised.",
+		},
+		[]string{"status"},
+	)
 )
 
 type Config struct {
@@ -122,6 +133,7 @@ func main() {
 		cfg:       cfg,
 	}
 	http.Handle("/", s)
+	http.Handle("/metrics", promhttp.Handler())
 
 	rend, err := newRenderer(cfg, s.pickPhoto)
 	if err != nil {
@@ -571,11 +583,15 @@ func (r *refresher) Refresh(ctx context.Context) displayData {
 		return dd
 	}
 
+	tsStatus := "ok"
 	if err := r.ts.Sync(ctx); err != nil {
 		// TODO: add error to screen? or some sort of simple message?
 		log.Printf("Syncing from Todoist: %v", err)
+		tsStatus = "failed"
 		// Continue on and use any existing data.
 	}
+	todoistSyncs.WithLabelValues(tsStatus).Inc()
+
 	newOpen, closed := make(map[string]todoist.Task), r.lastOpenTasks
 	for id, task := range r.ts.Tasks {
 		// this is actually only the open tasks, but be defensive.
