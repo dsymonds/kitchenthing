@@ -43,11 +43,11 @@ func (rt renderableTask) Compare(o renderableTask) int {
 	} else if !o.Time.IsZero() {
 		return 1
 	}
-	if rt.Project != o.Project {
-		return strings.Compare(rt.Project, o.Project)
-	}
 	if rt.Title != o.Title {
 		return strings.Compare(rt.Title, o.Title)
+	}
+	if rt.Project != o.Project {
+		return strings.Compare(rt.Project, o.Project)
 	}
 	if rt.HasDesc != o.HasDesc {
 		if rt.HasDesc {
