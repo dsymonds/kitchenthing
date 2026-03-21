@@ -70,6 +70,8 @@ type Config struct {
 		Template string `yaml:"template"`
 	} `yaml:"home_assistant"`
 
+	ActiveTaskReports map[string]ActiveTaskReport `yaml:"active_task_reports"`
+
 	Locations map[string]Location `yaml:"locations"`
 
 	Orderings []struct {
@@ -85,6 +87,11 @@ type Location struct {
 	Name                string
 	Latitude, Longitude float64
 	Radius              int
+}
+
+type ActiveTaskReport struct {
+	Project string `yaml:"project"`
+	Title   string `yaml:"title"`
 }
 
 type message struct {
@@ -371,6 +378,15 @@ func (s *server) serveSetNextPhoto(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
+func matchingTaskReport(tasks []renderableTask, atr ActiveTaskReport) bool {
+	for _, t := range tasks {
+		if t.Project == atr.Project && t.Title == atr.Title {
+			return true
+		}
+	}
+	return false
+}
+
 func numPowerHungry(tasks []renderableTask) int {
 	// Count number of tasks that have the "power-hungry" label,
 	// and do *not* have the "in-progress" label.
@@ -392,12 +408,10 @@ func loop(ctx context.Context, cfg Config, rend renderer, ref *refresher, p pape
 			log.Printf("New data to be displayed; refreshing now")
 
 			if hacfg := cfg.HomeAssistant; hacfg.Addr != "" {
-				hass := HASS{addr: hacfg.Addr, token: hacfg.Token}
+				// TODO: Do this even when data is not new?
+				hass := &HASS{addr: hacfg.Addr, token: hacfg.Token}
 				const entityID = "input_number.todoist_power_hungry_pending_count"
-				value := struct {
-					State      int               `json:"state"`
-					Attributes map[string]string `json:"attributes"`
-				}{
+				value := HASSStateValue{
 					State: numPowerHungry(data.tasks),
 					Attributes: map[string]string{
 						"state_class":         "measurement",
@@ -409,6 +423,7 @@ func loop(ctx context.Context, cfg Config, rend renderer, ref *refresher, p pape
 				if err := hass.SetState(ctx, entityID, value); err != nil {
 					log.Printf("Setting HASS state: %v", err)
 				}
+				sendActiveTaskReports(ctx, hass, data.tasks, cfg.ActiveTaskReports)
 			}
 
 			if *usePaper {
@@ -424,6 +439,26 @@ func loop(ctx context.Context, cfg Config, rend renderer, ref *refresher, p pape
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-time.After(cfg.RefreshPeriod):
+		}
+	}
+}
+
+func sendActiveTaskReports(ctx context.Context, hass *HASS, tasks []renderableTask, atrs map[string]ActiveTaskReport) {
+	for key, atr := range atrs {
+		state := "off"
+		if matchingTaskReport(tasks, atr) {
+			state = "on"
+		}
+		entityID := "input_boolean.todoist_active_task_" + key
+		value := HASSStateValue{
+			State: state,
+			Attributes: map[string]string{
+				"state_class":   "measurement",
+				"friendly_name": "Todoist active task " + key,
+			},
+		}
+		if err := hass.SetState(ctx, entityID, value); err != nil {
+			log.Printf("Setting HASS state: %v", err)
 		}
 	}
 }

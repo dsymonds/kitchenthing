@@ -44,9 +44,13 @@ func (h *HASS) FireEvent(ctx context.Context, eventType string, eventData any) e
 	return nil
 }
 
+type HASSStateValue struct {
+	State      any               `json:"state"` // e.g. an int, or a string (or "on"/"off" for bools)
+	Attributes map[string]string `json:"attributes"`
+}
+
 // SetState sets an entity's state.
-// The value should be a structure with at least a `state` key.
-func (h *HASS) SetState(ctx context.Context, entityID string, value any) error {
+func (h *HASS) SetState(ctx context.Context, entityID string, value HASSStateValue) error {
 	body, err := h.post(ctx, "/api/states/"+url.PathEscape(entityID), value)
 	if err != nil {
 		return err
