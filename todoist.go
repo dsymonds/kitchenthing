@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -269,8 +270,10 @@ func applyMetadata(ctx context.Context, ts *todoist.Syncer, cfg Config, task tod
 	return nil
 }
 
+var briefTime = regexp.MustCompile(`^(\d{1,2})(?::(\d{2}))?([AaPp][Mm])$`)
+
 // reminder creates the desired reminder for the task.
-// val is either a relative duration like "30m", or a location ID.
+// val is either a relative duration like "30m", a brief time like "8:30pm", or a location ID.
 func reminder(cfg Config, task todoist.Task, val string) (todoist.Reminder, error) {
 	// Prefer a location ID.
 	loc, ok := cfg.Locations[val]
@@ -288,17 +291,44 @@ func reminder(cfg Config, task todoist.Task, val string) (todoist.Reminder, erro
 	}
 
 	d, err := time.ParseDuration(val)
-	if err != nil {
-		return todoist.Reminder{}, fmt.Errorf("could not parse m:rem value %q: %w", val, err)
+	if err == nil {
+		// Relative time.
+		mins := int(d.Minutes())
+		return todoist.Reminder{
+			TaskID:       task.ID,
+			UserID:       *task.Responsible,
+			Type:         "relative",
+			MinuteOffset: &mins,
+		}, nil
 	}
 
-	mins := int(d.Minutes())
-	return todoist.Reminder{
-		TaskID:       task.ID,
-		UserID:       *task.Responsible,
-		Type:         "relative",
-		MinuteOffset: &mins,
-	}, nil
+	// It must be an absolute time.
+	if m := briefTime.FindStringSubmatch(val); m != nil {
+		// m[1] is hour, and either m[2] is minute and m[3] is am/pm or m[2] is am/pm
+		hour, _ := strconv.Atoi(m[1])
+		if hour == 12 {
+			hour = 0
+		}
+		min := 0
+		if len(m) > 3 {
+			min, _ = strconv.Atoi(m[2])
+		}
+		if c := m[len(m)-1][0]; c == 'P' || c == 'p' {
+			hour += 12
+		}
+		// Always today.
+		now := time.Now()
+		y, m, d := now.Date()
+		due := time.Date(y, m, d, hour, min, 0, 0, now.Location())
+		return todoist.Reminder{
+			TaskID: task.ID,
+			UserID: *task.Responsible,
+			Type:   "absolute",
+			Due:    &todoist.Due{Date: due.Format(time.RFC3339)},
+		}, nil
+	}
+
+	return todoist.Reminder{}, fmt.Errorf("could not parse m:rem value %q: %w", val, err)
 }
 
 func equivReminders(a, b todoist.Reminder) bool {
