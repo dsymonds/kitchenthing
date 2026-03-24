@@ -27,6 +27,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dsymonds/hass"
 	"github.com/dsymonds/todoist"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -409,9 +410,9 @@ func loop(ctx context.Context, cfg Config, rend renderer, ref *refresher, p pape
 
 			if hacfg := cfg.HomeAssistant; hacfg.Addr != "" {
 				// TODO: Do this even when data is not new?
-				hass := &HASS{addr: hacfg.Addr, token: hacfg.Token}
+				h := &hass.Client{Addr: hacfg.Addr, Token: hacfg.Token}
 				const entityID = "input_number.todoist_power_hungry_pending_count"
-				value := HASSStateValue{
+				value := hass.StateValue{
 					State: numPowerHungry(data.tasks),
 					Attributes: map[string]string{
 						"state_class":         "measurement",
@@ -420,10 +421,10 @@ func loop(ctx context.Context, cfg Config, rend renderer, ref *refresher, p pape
 						"friendly_name":       "Todoist power-hungry pending count",
 					},
 				}
-				if err := hass.SetState(ctx, entityID, value); err != nil {
+				if err := h.SetState(ctx, entityID, value); err != nil {
 					log.Printf("Setting HASS state: %v", err)
 				}
-				sendActiveTaskReports(ctx, hass, data.tasks, cfg.ActiveTaskReports)
+				sendActiveTaskReports(ctx, h, data.tasks, cfg.ActiveTaskReports)
 			}
 
 			if *usePaper {
@@ -443,21 +444,21 @@ func loop(ctx context.Context, cfg Config, rend renderer, ref *refresher, p pape
 	}
 }
 
-func sendActiveTaskReports(ctx context.Context, hass *HASS, tasks []renderableTask, atrs map[string]ActiveTaskReport) {
+func sendActiveTaskReports(ctx context.Context, h *hass.Client, tasks []renderableTask, atrs map[string]ActiveTaskReport) {
 	for key, atr := range atrs {
 		state := "off"
 		if matchingTaskReport(tasks, atr) {
 			state = "on"
 		}
 		entityID := "input_boolean.todoist_active_task_" + key
-		value := HASSStateValue{
+		value := hass.StateValue{
 			State: state,
 			Attributes: map[string]string{
 				"state_class":   "measurement",
 				"friendly_name": "Todoist active task " + key,
 			},
 		}
-		if err := hass.SetState(ctx, entityID, value); err != nil {
+		if err := h.SetState(ctx, entityID, value); err != nil {
 			log.Printf("Setting HASS state: %v", err)
 		}
 	}
@@ -653,9 +654,9 @@ func (r *refresher) Refresh(ctx context.Context) displayData {
 	}
 
 	if hacfg := r.cfg.HomeAssistant; hacfg.Addr != "" {
-		hass := HASS{addr: hacfg.Addr, token: hacfg.Token}
+		h := &hass.Client{Addr: hacfg.Addr, Token: hacfg.Token}
 
-		ha, err := hass.RenderTemplate(ctx, hacfg.Template)
+		ha, err := h.RenderTemplate(ctx, hacfg.Template)
 		if err != nil {
 			log.Printf("Querying HomeAssistant: %v", err)
 		} else {
@@ -670,7 +671,7 @@ func (r *refresher) Refresh(ctx context.Context) displayData {
 				Content: task.Content,
 				Project: r.ts.Projects[task.ProjectID].Name,
 			}
-			if err := hass.FireEvent(ctx, "todoist_task_completed", data); err != nil {
+			if err := h.FireEvent(ctx, "todoist_task_completed", data); err != nil {
 				log.Printf("Firing HASS event: %v", err)
 			}
 		}

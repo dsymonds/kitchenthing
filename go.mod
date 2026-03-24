@@ -1,8 +1,9 @@
 module github.com/dsymonds/kitchenthing
 
-go 1.23.0
+go 1.24
 
 require (
+	github.com/dsymonds/hass v0.0.0-20260324210857-4733a55db4c0
 	github.com/dsymonds/todoist v0.0.0-20260206031333-9aff31e7b7a0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/stianeikeland/go-rpio/v4 v4.6.0

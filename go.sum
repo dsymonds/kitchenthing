@@ -5,6 +5,8 @@ github.com/cespare/xxhash/v2 v2.3.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XL
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
+github.com/dsymonds/hass v0.0.0-20260324210857-4733a55db4c0 h1:GnhPsxy3cBAOk/CCaedQVrVTNcUwWJ5Ezt4BMrPd4Qw=
+github.com/dsymonds/hass v0.0.0-20260324210857-4733a55db4c0/go.mod h1:mhtrVFIf3TTdKw2FD1fO4DWzhPG96VpTE2RKxArvZWU=
 github.com/dsymonds/todoist v0.0.0-20260206031333-9aff31e7b7a0 h1:wvdVCcnqRUOPjx+d2sp3Gaq60ieawYfAhv5MPwyJRGo=
 github.com/dsymonds/todoist v0.0.0-20260206031333-9aff31e7b7a0/go.mod h1:AC+ZX3smxKe7EUCHKN3nYcKPEBgMQ/628UlsiosVKT4=
 github.com/google/go-cmp v0.7.0 h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=
